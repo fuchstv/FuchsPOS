@@ -1,0 +1,18 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Sale {
+  id          Int      @id @default(autoincrement())
+  receiptNo   String
+  total       Float
+  paymentType String
+  createdAt   DateTime @default(now())
+  signedData  String?
+  qrCodeData  String?
+}
