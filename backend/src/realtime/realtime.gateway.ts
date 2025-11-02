@@ -1,33 +1,21 @@
-import { Logger } from '@nestjs/common';
-import {
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-  WebSocketGateway,
-  WebSocketServer,
-} from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter } from 'node:events';
 
-@WebSocketGateway({ namespace: 'pos', cors: { origin: '*' } })
-export class PosRealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+@Injectable()
+export class PosRealtimeGateway {
   private readonly logger = new Logger(PosRealtimeGateway.name);
+  private readonly emitter = new EventEmitter();
 
-  @WebSocketServer()
-  server?: Server;
-
-  handleConnection(client: Socket) {
-    this.logger.verbose(`POS client connected: ${client.id}`);
+  on(event: string, listener: (payload: unknown) => void) {
+    this.emitter.on(event, listener);
   }
 
-  handleDisconnect(client: Socket) {
-    this.logger.verbose(`POS client disconnected: ${client.id}`);
+  off(event: string, listener: (payload: unknown) => void) {
+    this.emitter.off(event, listener);
   }
 
   broadcast(event: string, payload: unknown) {
-    if (!this.server) {
-      this.logger.warn(`Tried to broadcast event ${event} but gateway not initialised`);
-      return;
-    }
-
-    this.server.emit(event, payload);
+    this.logger.verbose(`Broadcasting POS realtime event ${event}`);
+    this.emitter.emit(event, payload);
   }
 }
