@@ -12,6 +12,10 @@ import { InventoryModule } from './inventory/inventory.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { PreordersModule } from './preorders/preorders.module';
 import { WoltModule } from './wolt/wolt.module';
+import { ReportingModule } from './reporting/reporting.module';
+import { AccountingModule } from './accounting/accounting.module';
+import { AccessControlModule } from './access-control/access-control.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 
 @Module({
   imports: [
@@ -28,6 +32,10 @@ import { WoltModule } from './wolt/wolt.module';
     RealtimeModule,
     PreordersModule,
     WoltModule,
+    ReportingModule,
+    AccountingModule,
+    AccessControlModule,
+    IntegrationsModule,
   ],
 })
 export class AppModule {}
