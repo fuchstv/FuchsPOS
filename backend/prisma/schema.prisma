@@ -3,16 +3,23 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+enum SaleStatus {
+  SUCCESS
+  FAILED
+  PROCESSING
+}
+
 model Sale {
-  id          Int      @id @default(autoincrement())
-  receiptNo   String
-  total       Float
-  paymentType String
-  createdAt   DateTime @default(now())
-  signedData  String?
-  qrCodeData  String?
+  id            Int         @id @default(autoincrement())
+  receiptNo     String      @unique
+  total         Decimal     @db.Numeric(12, 2)
+  paymentMethod String
+  status        SaleStatus  @default(SUCCESS)
+  items         Json
+  reference     String?
+  createdAt     DateTime    @default(now())
 }

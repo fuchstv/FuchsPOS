@@ -1,9 +1,13 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import DemoPOS from "./pages/DemoPOS";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
+import App from './App';
+import './index.css';
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+registerSW({ immediate: true });
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <DemoPOS />
-  </React.StrictMode>
+    <App />
+  </React.StrictMode>,
 );
