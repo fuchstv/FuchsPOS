@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { type AxiosInstance } from 'axios';
 import type {
   FiskalyTransactionFinishRequest,
   FiskalyTransactionResponse,
@@ -11,22 +10,18 @@ import type {
 @Injectable()
 export class FiskalyClientService {
   private readonly logger = new Logger(FiskalyClientService.name);
-  private readonly http: AxiosInstance;
+  private readonly baseUrl: string;
+  private readonly defaultHeaders = {
+    'Content-Type': 'application/json',
+  } as const;
+  private readonly timeoutMs = 10_000;
   private accessToken?: string;
   private tokenExpiresAt = 0;
 
   constructor(private readonly config: ConfigService) {
-    const baseUrl =
+    this.baseUrl =
       this.config.get<string>('FISKALY_BASE_URL', { infer: true }) ??
       'https://kassensichv-middleware.fiskaly.com/api/v2';
-
-    this.http = axios.create({
-      baseURL: baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000,
-    });
   }
 
   async startTransaction(
@@ -34,15 +29,9 @@ export class FiskalyClientService {
     payload: FiskalyTransactionStartRequest,
   ): Promise<FiskalyTransactionResponse> {
     const token = await this.ensureAccessToken();
-    const response = await this.http.post<FiskalyTransactionResponse>(
-      `/transactions/${tssId}`,
-      payload,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-
-    return response.data;
+    return this.post<FiskalyTransactionResponse>(`/transactions/${tssId}`, payload, {
+      Authorization: `Bearer ${token}`,
+    });
   }
 
   async updateTransaction(
@@ -51,15 +40,13 @@ export class FiskalyClientService {
     payload: FiskalyTransactionUpdateRequest,
   ): Promise<FiskalyTransactionResponse> {
     const token = await this.ensureAccessToken();
-    const response = await this.http.put<FiskalyTransactionResponse>(
+    return this.put<FiskalyTransactionResponse>(
       `/transactions/${tssId}/${transactionId}`,
       payload,
       {
-        headers: { Authorization: `Bearer ${token}` },
+        Authorization: `Bearer ${token}`,
       },
     );
-
-    return response.data;
   }
 
   async finishTransaction(
@@ -68,15 +55,13 @@ export class FiskalyClientService {
     payload: FiskalyTransactionFinishRequest = {},
   ): Promise<FiskalyTransactionResponse> {
     const token = await this.ensureAccessToken();
-    const response = await this.http.put<FiskalyTransactionResponse>(
+    return this.put<FiskalyTransactionResponse>(
       `/transactions/${tssId}/${transactionId}/finish`,
       payload,
       {
-        headers: { Authorization: `Bearer ${token}` },
+        Authorization: `Bearer ${token}`,
       },
     );
-
-    return response.data;
   }
 
   private async ensureAccessToken(): Promise<string> {
@@ -93,7 +78,7 @@ export class FiskalyClientService {
     }
 
     this.logger.debug('Fordere neuen Fiskaly-Access-Token an');
-    const response = await this.http.post<{ access_token: string; expires_in: number }>(
+    const response = await this.post<{ access_token: string; expires_in: number }>(
       '/auth',
       {
         api_key: apiKey,
@@ -101,9 +86,56 @@ export class FiskalyClientService {
       },
     );
 
-    this.accessToken = response.data.access_token;
-    this.tokenExpiresAt = Date.now() + response.data.expires_in * 1000;
+    this.accessToken = response.access_token;
+    this.tokenExpiresAt = Date.now() + response.expires_in * 1000;
 
     return this.accessToken;
+  }
+
+  private async post<T>(path: string, body: unknown, headers?: Record<string, string>) {
+    return this.request<T>('POST', path, body, headers);
+  }
+
+  private async put<T>(path: string, body: unknown, headers?: Record<string, string>) {
+    return this.request<T>('PUT', path, body, headers);
+  }
+
+  private async request<T>(
+    method: 'POST' | 'PUT',
+    path: string,
+    body: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          ...this.defaultHeaders,
+          ...(headers ?? {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        this.logger.error(
+          `Fiskaly-Request fehlgeschlagen (${response.status}): ${text.substring(0, 200)}`,
+        );
+        throw new Error(`Fiskaly API responded with status ${response.status}`);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        this.logger.error(`Fiskaly-Request überschritt Timeout von ${this.timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
