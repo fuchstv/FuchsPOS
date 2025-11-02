@@ -7,6 +7,7 @@ import { PosModule } from './pos/pos.module';
 import { HardwareModule } from './hardware/hardware.module';
 import { MailerModule } from './mailer/mailer.module';
 import { FiscalModule } from './fiscal/fiscal.module';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { FiscalModule } from './fiscal/fiscal.module';
     MailerModule,
     FiscalModule,
     PosModule,
+    InventoryModule,
   ],
 })
 export class AppModule {}

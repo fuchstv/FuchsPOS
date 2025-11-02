@@ -36,6 +36,13 @@ model Tenant {
   updatedAt        DateTime       @updatedAt
   tsses            Tss[]
   cashRegisters    CashRegister[]
+  suppliers        Supplier[]
+  products         Product[]
+  storageLocations StorageLocation[]
+  goodsReceipts    GoodsReceipt[]
+  inventoryCounts  InventoryCount[]
+  priceHistories   PriceHistory[]
+  promotions       Promotion[]
 }
 
 model Tss {
@@ -60,4 +67,218 @@ model CashRegister {
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tss       Tss      @relation(fields: [tssId], references: [id], onDelete: Cascade)
+}
+
+enum InventoryCountStatus {
+  OPEN
+  COMPLETED
+}
+
+model Supplier {
+  id                Int                @id @default(autoincrement())
+  tenantId          String
+  name              String
+  bnnSupplierNumber String?
+  contactEmail      String?
+  phone             String?
+  address           String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  goodsReceipts     GoodsReceipt[]
+  batches           Batch[]
+  products          Product[]
+
+  @@index([tenantId])
+}
+
+model Product {
+  id           Int                @id @default(autoincrement())
+  tenantId     String
+  supplierId   Int?
+  sku          String
+  name         String
+  unit         String             @default("pcs")
+  defaultPrice Decimal            @db.Decimal(12, 2)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier     Supplier?          @relation(fields: [supplierId], references: [id])
+  batches      Batch[]
+  receiptItems GoodsReceiptItem[]
+  countItems   InventoryCountItem[]
+  adjustments  InventoryAdjustment[]
+  priceHistory PriceHistory[]
+
+  @@unique([tenantId, sku])
+  @@index([supplierId])
+}
+
+model StorageLocation {
+  id          Int         @id @default(autoincrement())
+  tenantId    String
+  code        String
+  description String?
+  type        String?     @default("GENERAL")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batches     Batch[]
+  counts      InventoryCount[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Batch {
+  id                Int                   @id @default(autoincrement())
+  productId         Int
+  supplierId        Int?
+  storageLocationId Int?
+  lotNumber         String
+  quantity          Decimal               @db.Decimal(12, 3)
+  unitCost          Decimal?              @db.Decimal(12, 4)
+  expirationDate    DateTime?
+  receivedAt        DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  product           Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier          Supplier?             @relation(fields: [supplierId], references: [id])
+  storageLocation   StorageLocation?      @relation(fields: [storageLocationId], references: [id])
+  receiptItems      GoodsReceiptItem[]
+  countItems        InventoryCountItem[]
+  adjustments       InventoryAdjustment[]
+
+  @@index([productId])
+  @@index([lotNumber])
+}
+
+model GoodsReceipt {
+  id            Int                    @id @default(autoincrement())
+  tenantId      String
+  supplierId    Int?
+  reference     String?
+  receivedAt    DateTime               @default(now())
+  notes         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier      Supplier?              @relation(fields: [supplierId], references: [id])
+  items         GoodsReceiptItem[]
+  importSources GoodsReceiptImportLog[]
+
+  @@index([tenantId])
+  @@index([supplierId])
+}
+
+model GoodsReceiptItem {
+  id             Int           @id @default(autoincrement())
+  goodsReceiptId Int
+  productId      Int
+  batchId        Int?
+  quantity       Decimal       @db.Decimal(12, 3)
+  unitCost       Decimal       @db.Decimal(12, 4)
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  goodsReceipt   GoodsReceipt  @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch          Batch?        @relation(fields: [batchId], references: [id])
+
+  @@index([goodsReceiptId])
+  @@index([productId])
+}
+
+model GoodsReceiptImportLog {
+  id             Int          @id @default(autoincrement())
+  goodsReceiptId Int
+  format         String
+  sourceFileName String?
+  rawPayload     String
+  createdAt      DateTime     @default(now())
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+}
+
+model InventoryCount {
+  id          Int                   @id @default(autoincrement())
+  tenantId    String
+  locationId  Int?
+  status      InventoryCountStatus   @default(OPEN)
+  startedAt   DateTime               @default(now())
+  completedAt DateTime?
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location    StorageLocation?       @relation(fields: [locationId], references: [id])
+  items       InventoryCountItem[]
+  adjustments InventoryAdjustment[]
+
+  @@index([tenantId])
+  @@index([locationId])
+}
+
+model InventoryCountItem {
+  id               Int               @id @default(autoincrement())
+  inventoryCountId Int
+  productId        Int
+  batchId          Int?
+  expectedQuantity Decimal?          @db.Decimal(12, 3)
+  countedQuantity  Decimal           @db.Decimal(12, 3)
+  difference       Decimal           @db.Decimal(12, 3)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  inventoryCount   InventoryCount    @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch            Batch?            @relation(fields: [batchId], references: [id])
+
+  @@index([inventoryCountId])
+  @@index([productId])
+}
+
+model InventoryAdjustment {
+  id               Int             @id @default(autoincrement())
+  inventoryCountId Int?
+  productId        Int
+  batchId          Int?
+  quantityChange   Decimal         @db.Decimal(12, 3)
+  reason           String?
+  createdAt        DateTime        @default(now())
+  inventoryCount   InventoryCount? @relation(fields: [inventoryCountId], references: [id])
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch            Batch?          @relation(fields: [batchId], references: [id])
+
+  @@index([inventoryCountId])
+  @@index([productId])
+}
+
+model Promotion {
+  id          Int           @id @default(autoincrement())
+  tenantId    String
+  name        String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  priceEvents PriceHistory[]
+
+  @@index([tenantId])
+}
+
+model PriceHistory {
+  id            Int        @id @default(autoincrement())
+  tenantId      String
+  productId     Int
+  oldPrice      Decimal    @db.Decimal(12, 2)
+  newPrice      Decimal    @db.Decimal(12, 2)
+  reason        String?
+  effectiveFrom DateTime   @default(now())
+  effectiveTo   DateTime?
+  promotionId   Int?
+  createdAt     DateTime   @default(now())
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product       Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  promotion     Promotion? @relation(fields: [promotionId], references: [id])
+
+  @@index([tenantId])
+  @@index([productId])
 }
