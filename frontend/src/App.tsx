@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from './api/client';
 import { usePosStore } from './store/posStore';
+import type { PaymentMethod } from './store/types';
 
 type HealthStatus = {
   status: string;
@@ -22,12 +23,24 @@ export default function App() {
     cart,
     addToCart,
     removeFromCart,
-    simulatePayment,
+    processPayment,
     clearCart,
     paymentState,
     latestSale,
     error,
+    paymentMethods,
+    queuedPayments,
+    isOffline,
+    initialize,
+    setOffline,
+    syncQueuedPayments,
   } = usePosStore();
+
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [receiptEmail, setReceiptEmail] = useState('');
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [processingMethod, setProcessingMethod] = useState<PaymentMethod | null>(null);
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -59,6 +72,84 @@ export default function App() {
     () => cartWithDetails.reduce((sum, item) => sum + item.lineTotal, 0),
     [cartWithDetails],
   );
+
+  const pendingQueuedCount = useMemo(
+    () => queuedPayments.filter(payment => payment.status === 'pending').length,
+    [queuedPayments],
+  );
+
+  const failedQueuedPayments = useMemo(
+    () => queuedPayments.filter(payment => payment.status === 'failed'),
+    [queuedPayments],
+  );
+
+  useEffect(() => {
+    void initialize();
+  }, [initialize]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setOffline(false);
+      void syncQueuedPayments();
+    };
+    const handleOffline = () => setOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [setOffline, syncQueuedPayments]);
+
+  useEffect(() => {
+    if (paymentState === 'success' && customerEmail) {
+      setReceiptEmail(customerEmail);
+      setEmailStatus('idle');
+      setEmailError(null);
+    }
+  }, [paymentState, customerEmail]);
+
+  const handleProcessPayment = (method: PaymentMethod) => {
+    setProcessingMethod(method);
+    setEmailStatus('idle');
+    setEmailError(null);
+
+    void processPayment({
+      paymentMethod: method,
+      customerEmail: customerEmail.trim() ? customerEmail.trim() : undefined,
+    }).finally(() => {
+      setProcessingMethod(previous => (previous === method ? null : previous));
+    });
+  };
+
+  const handleSendReceiptEmail = async () => {
+    if (!latestSale) {
+      return;
+    }
+    if (!receiptEmail.trim()) {
+      setEmailStatus('error');
+      setEmailError('Bitte eine E-Mail-Adresse angeben.');
+      return;
+    }
+
+    setEmailStatus('sending');
+    setEmailError(null);
+
+    try {
+      await api.post('/pos/receipts/email', {
+        saleId: latestSale.id,
+        email: receiptEmail.trim(),
+      });
+      setEmailStatus('sent');
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ?? err?.message ?? 'E-Mail konnte nicht versendet werden.';
+      setEmailStatus('error');
+      setEmailError(message);
+    }
+  };
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -195,30 +286,112 @@ export default function App() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => simulatePayment('CARD')}
-              disabled={paymentState === 'processing'}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-base font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-500/60"
-            >
-              {paymentState === 'processing' ? 'Kartenzahlung läuft …' : 'Kartenzahlung abschließen'}
-            </button>
-            <button
-              type="button"
-              onClick={() => simulatePayment('CASH')}
-              disabled={paymentState === 'processing'}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-3 text-base font-semibold text-slate-100 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Barzahlung verbuchen
-            </button>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label htmlFor="customer-email" className="text-xs uppercase tracking-wide text-slate-400">
+                Kunden-E-Mail (optional)
+              </label>
+              <input
+                id="customer-email"
+                type="email"
+                value={customerEmail}
+                onChange={event => setCustomerEmail(event.target.value)}
+                placeholder="kunde@example.com"
+                className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none"
+              />
+              <p className="text-xs text-slate-500">
+                Wenn angegeben, wird der digitale Bon automatisch nach erfolgreicher Zahlung versendet.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {paymentMethods.map(method => {
+                const disabled =
+                  paymentState === 'processing' || (isOffline && !method.supportsOffline) || cartWithDetails.length === 0;
+                const isProcessing = processingMethod === method.type && paymentState === 'processing';
+                const baseButtonClasses =
+                  method.type === 'CARD' || method.type === 'MOBILE'
+                    ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400 disabled:bg-emerald-500/60'
+                    : 'border border-white/10 text-slate-100 hover:border-amber-400 hover:text-amber-200 disabled:opacity-60';
+
+                return (
+                  <button
+                    key={method.type}
+                    type="button"
+                    onClick={() => handleProcessPayment(method.type)}
+                    disabled={disabled}
+                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed ${baseButtonClasses}`}
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {isProcessing ? `${method.label} läuft …` : method.label}
+                      </p>
+                      <p className="text-xs text-slate-200/80">{method.description}</p>
+                    </div>
+                    <span
+                      className={`text-xs font-medium ${
+                        method.supportsOffline ? 'text-emerald-200' : 'text-slate-400'
+                      }`}
+                    >
+                      {method.supportsOffline ? (isOffline ? 'Offline-fähig' : 'Offline möglich') : 'Online erforderlich'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {isOffline && (
+            <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+              Offline-Modus aktiv.{' '}
+              {pendingQueuedCount > 0
+                ? `Noch ${pendingQueuedCount} Zahlung${pendingQueuedCount > 1 ? 'en' : ''} in der Warteschlange.`
+                : 'Neue Zahlungen werden lokal zwischengespeichert.'}
+            </div>
+          )}
 
           {paymentState === 'success' && latestSale && (
             <div className="space-y-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
               <p className="font-semibold text-emerald-100">Beleg gespeichert</p>
               <p>Bonnummer: {latestSale.receiptNo}</p>
               <p>Gesamt: {currency.format(latestSale.total)}</p>
+              <div className="mt-3 space-y-2 text-emerald-100/90">
+                <label htmlFor="receipt-email" className="text-xs uppercase tracking-wide text-emerald-200/70">
+                  Bon erneut per E-Mail senden
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id="receipt-email"
+                    type="email"
+                    value={receiptEmail}
+                    onChange={event => {
+                      setReceiptEmail(event.target.value);
+                      setEmailStatus('idle');
+                      setEmailError(null);
+                    }}
+                    placeholder="kunde@example.com"
+                    className="flex-1 rounded-xl border border-emerald-300/40 bg-emerald-900/40 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-200/60 focus:border-emerald-300 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendReceiptEmail}
+                    disabled={emailStatus === 'sending' || !receiptEmail.trim()}
+                    className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/60"
+                  >
+                    {emailStatus === 'sending' ? 'Versand …' : 'E-Mail senden'}
+                  </button>
+                </div>
+                {emailError && <p className="text-xs text-rose-200">{emailError}</p>}
+                {emailStatus === 'sent' && (
+                  <p className="text-xs text-emerald-200">E-Mail wurde erfolgreich verschickt.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {paymentState === 'queued' && (
+            <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+              {error ?? 'Zahlung wurde offline gespeichert und wird bei Verbindung automatisch übertragen.'}
             </div>
           )}
 
@@ -226,6 +399,38 @@ export default function App() {
             <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-200">
               {error}
             </div>
+          )}
+
+          {queuedPayments.length > 0 && (
+            <section className="space-y-2 rounded-2xl border border-white/10 bg-slate-900/70 p-4 text-xs text-slate-300">
+              <div className="flex items-center justify-between text-sm text-slate-200">
+                <h3 className="font-semibold">Offline-Warteschlange</h3>
+                <span>{queuedPayments.length} Vorgang{queuedPayments.length > 1 ? 'e' : ''}</span>
+              </div>
+              <ul className="space-y-1">
+                {queuedPayments.map(payment => (
+                  <li
+                    key={payment.id}
+                    className="flex items-center justify-between rounded-lg bg-slate-950/60 px-3 py-2"
+                  >
+                    <span>{new Date(payment.createdAt).toLocaleTimeString('de-DE')}</span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        payment.status === 'failed' ? 'text-rose-300' : 'text-emerald-300'
+                      }`}
+                    >
+                      {payment.status === 'failed' ? 'Fehlgeschlagen' : 'Ausstehend'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {failedQueuedPayments.length > 0 && (
+                <p className="text-xs text-rose-300">
+                  {failedQueuedPayments.length} Vorgang{failedQueuedPayments.length > 1 ? 'e' : ''} benötigen
+                  Aufmerksamkeit. Bitte prüfe die Zahlungsmittel oder versuche es erneut.
+                </p>
+              )}
+            </section>
           )}
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-400">

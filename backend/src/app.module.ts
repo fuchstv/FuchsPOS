@@ -4,6 +4,8 @@ import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { PosModule } from './pos/pos.module';
+import { HardwareModule } from './hardware/hardware.module';
+import { MailerModule } from './mailer/mailer.module';
 
 @Module({
   imports: [
@@ -11,6 +13,8 @@ import { PosModule } from './pos/pos.module';
     PrismaModule,
     RedisModule,
     HealthModule,
+    HardwareModule,
+    MailerModule,
     PosModule,
   ],
 })

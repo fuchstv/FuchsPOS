@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -14,6 +15,8 @@ import {
 export enum PaymentMethod {
   CASH = 'CASH',
   CARD = 'CARD',
+  MOBILE = 'MOBILE',
+  VOUCHER = 'VOUCHER',
 }
 
 export class LineItemDto {
@@ -45,4 +48,12 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   reference?: string;
+
+  @IsOptional()
+  @IsEmail()
+  customerEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  terminalId?: string;
 }
