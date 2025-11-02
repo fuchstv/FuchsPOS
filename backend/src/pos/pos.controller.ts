@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { PosService } from './pos.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
@@ -26,5 +26,17 @@ export class PosController {
   @Post('receipts/email')
   sendReceiptByEmail(@Body() dto: EmailReceiptDto) {
     return this.posService.sendReceiptEmail(dto);
+  }
+
+  @Get('preorders')
+  listPreorders() {
+    return this.posService.listPreorders();
+  }
+
+  @Get('cash-events')
+  listCashEvents(@Query('limit') limit?: string) {
+    const parsed = limit ? Number(limit) : undefined;
+    const take = parsed && !Number.isNaN(parsed) ? parsed : undefined;
+    return this.posService.listCashEvents(take);
   }
 }

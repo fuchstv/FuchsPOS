@@ -3,13 +3,16 @@ import api from '../api/client';
 import {
   CartItem,
   CatalogItem,
+  CashEventRecord,
   PaymentIntent,
   PaymentMethod,
   PaymentMethodDefinition,
   PaymentRequestPayload,
   PaymentState,
+  SaleRecord,
   SaleResponse,
   CartTotals,
+  PreorderRecord,
 } from './types';
 import {
   enqueuePayment,
@@ -76,6 +79,8 @@ type PosStore = {
   queuedPayments: PaymentIntent[];
   terminalId: string;
   initialized: boolean;
+  preorders: PreorderRecord[];
+  cashEvents: CashEventRecord[];
   addToCart: (id: string) => void;
   removeFromCart: (id: string) => void;
   clearCart: () => void;
@@ -83,6 +88,51 @@ type PosStore = {
   initialize: () => Promise<void>;
   setOffline: (isOffline: boolean) => void;
   syncQueuedPayments: () => Promise<void>;
+  updatePreorder: (preorder: PreorderRecord) => void;
+  addCashEvent: (event: CashEventRecord) => void;
+  applyRemoteSale: (sale: SaleRecord) => void;
+};
+
+const MAX_CASH_EVENTS = 50;
+
+const mergeCashEvents = (existing: CashEventRecord[], incoming: CashEventRecord[]): CashEventRecord[] => {
+  if (!incoming.length) {
+    return existing;
+  }
+
+  const map = new Map<number, CashEventRecord>();
+  [...incoming, ...existing].forEach(event => {
+    map.set(event.id, event);
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, MAX_CASH_EVENTS);
+};
+
+const mergePreorders = (existing: PreorderRecord[], preorder: PreorderRecord): PreorderRecord[] => {
+  if (preorder.status === 'PICKED_UP') {
+    return existing.filter(item => item.id !== preorder.id);
+  }
+
+  const next = existing.filter(item => item.id !== preorder.id);
+  next.push(preorder);
+  next.sort((a, b) => {
+    const aDate = a.statusHistory[0]?.createdAt ?? '';
+    const bDate = b.statusHistory[0]?.createdAt ?? '';
+    return aDate.localeCompare(bDate);
+  });
+  return next;
+};
+
+const applySaleEffects = (state: Pick<PosStore, 'cashEvents' | 'preorders'>, sale: SaleRecord) => {
+  const cashEvents = sale.cashEvents ? mergeCashEvents(state.cashEvents, sale.cashEvents) : state.cashEvents;
+  const preorders =
+    sale.preorder && sale.preorder.status === 'PICKED_UP'
+      ? state.preorders.filter(item => item.id !== sale.preorder?.id)
+      : state.preorders;
+
+  return { cashEvents, preorders };
 };
 
 const calculateCartTotals = (cart: CartItem[], catalog: CatalogItem[]): CartTotals => {
@@ -211,6 +261,8 @@ export const usePosStore = create<PosStore>((set, get) => {
     queuedPayments: [],
     terminalId: '',
     initialized: false,
+    preorders: [],
+    cashEvents: [],
     addToCart: id => {
       const state = get();
       const existing = state.cart.find(item => item.id === id);
@@ -271,12 +323,17 @@ export const usePosStore = create<PosStore>((set, get) => {
       try {
         const { data } = await api.post<SaleResponse>('/pos/payments', payload);
 
-        set({
-          paymentState: 'success',
-          latestSale: data.sale,
-          cart: [],
-          error: undefined,
-          isOffline: false,
+        set(state => {
+          const effects = applySaleEffects(state, data.sale);
+          return {
+            paymentState: 'success',
+            latestSale: data.sale,
+            cart: [],
+            error: undefined,
+            isOffline: false,
+            cashEvents: effects.cashEvents,
+            preorders: effects.preorders,
+          };
         });
 
         await persistCart([]);
@@ -318,6 +375,19 @@ export const usePosStore = create<PosStore>((set, get) => {
 
       const terminalId = await ensureTerminalId();
 
+      let preorders: PreorderRecord[] = [];
+      let cashEvents: CashEventRecord[] = [];
+      try {
+        const [preorderResponse, cashEventResponse] = await Promise.all([
+          api.get<PreorderRecord[]>('/pos/preorders'),
+          api.get<CashEventRecord[]>('/pos/cash-events', { params: { limit: 50 } }),
+        ]);
+        preorders = preorderResponse.data ?? [];
+        cashEvents = cashEventResponse.data ?? [];
+      } catch (error) {
+        console.warn('Vorbestellungen oder Kassenevents konnten nicht synchronisiert werden.', error);
+      }
+
       set({
         catalog,
         cart: storedCart?.items ?? [],
@@ -329,6 +399,8 @@ export const usePosStore = create<PosStore>((set, get) => {
           typeof navigator !== 'undefined'
             ? !navigator.onLine || queuedPayments.some(payment => payment.status === 'pending')
             : queuedPayments.some(payment => payment.status === 'pending'),
+        preorders,
+        cashEvents,
       });
 
       if (queuedPayments.length && (typeof navigator === 'undefined' || navigator.onLine)) {
@@ -348,14 +420,19 @@ export const usePosStore = create<PosStore>((set, get) => {
 
           await persistCart([]);
 
-          set(current => ({
-            queuedPayments: current.queuedPayments.filter(item => item.id !== payment.id),
-            paymentState: 'success',
-            latestSale: data.sale,
-            cart: [],
-            error: undefined,
-            isOffline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
-          }));
+          set(current => {
+            const effects = applySaleEffects(current, data.sale);
+            return {
+              queuedPayments: current.queuedPayments.filter(item => item.id !== payment.id),
+              paymentState: 'success',
+              latestSale: data.sale,
+              cart: [],
+              error: undefined,
+              isOffline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
+              cashEvents: effects.cashEvents,
+              preorders: effects.preorders,
+            };
+          });
         } catch (error: any) {
           if (!error?.response) {
             set({ isOffline: true, paymentState: 'queued' });
@@ -376,6 +453,25 @@ export const usePosStore = create<PosStore>((set, get) => {
           }));
         }
       }
+    },
+    updatePreorder: preorder => {
+      set(state => ({ preorders: mergePreorders(state.preorders, preorder) }));
+    },
+    addCashEvent: event => {
+      set(state => ({ cashEvents: mergeCashEvents(state.cashEvents, [event]) }));
+    },
+    applyRemoteSale: sale => {
+      set(state => {
+        const effects = applySaleEffects(state, sale);
+        const isSameSale = state.latestSale?.id === sale.id;
+        return {
+          latestSale: sale,
+          cashEvents: effects.cashEvents,
+          preorders: effects.preorders,
+          paymentState: isSameSale ? state.paymentState : 'idle',
+          error: isSameSale ? state.error : undefined,
+        };
+      });
     },
   };
 });

@@ -23,6 +23,118 @@ model Sale {
   reference     String?
   createdAt     DateTime    @default(now())
   fiscalMetadata Json?
+  documents     DeliveryDocument[]
+  cashEvents    CashEvent[]
+  preorder      Preorder?
+}
+
+enum PreorderStatus {
+  ORDERED
+  READY
+  PICKED_UP
+}
+
+enum DeliveryDocumentType {
+  DELIVERY_NOTE
+  PICKUP_RECEIPT
+}
+
+enum CashEventType {
+  SALE_COMPLETED
+  PREORDER_READY
+  PREORDER_PICKED_UP
+}
+
+model Preorder {
+  id                Int                       @id @default(autoincrement())
+  tenantId          String?
+  externalReference String                    @unique
+  customerName      String?
+  scheduledPickup   DateTime?
+  status            PreorderStatus            @default(ORDERED)
+  items             Json
+  notes             String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  saleId            Int?        @unique
+  woltOrderId       Int?
+  sale              Sale?                     @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  woltOrder         WoltOrder?                @relation(fields: [woltOrderId], references: [id], onDelete: SetNull)
+  statusHistory     PreorderStatusTransition[]
+  documents         DeliveryDocument[]
+  cashEvents        CashEvent[]
+
+  @@index([externalReference])
+  @@index([status])
+}
+
+model PreorderStatusTransition {
+  id         Int            @id @default(autoincrement())
+  preorderId Int
+  status     PreorderStatus
+  notes      String?
+  createdAt  DateTime       @default(now())
+  preorder   Preorder       @relation(fields: [preorderId], references: [id], onDelete: Cascade)
+
+  @@index([preorderId])
+}
+
+model DeliveryDocument {
+  id             Int                 @id @default(autoincrement())
+  preorderId     Int?
+  saleId         Int?
+  type           DeliveryDocumentType
+  documentNumber String              @unique
+  payload        Json
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  preorder       Preorder?           @relation(fields: [preorderId], references: [id], onDelete: SetNull)
+  sale           Sale?               @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@index([preorderId])
+  @@index([saleId])
+}
+
+model CashEvent {
+  id         Int           @id @default(autoincrement())
+  saleId     Int?
+  preorderId Int?
+  type       CashEventType
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+  sale       Sale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  preorder   Preorder?     @relation(fields: [preorderId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([saleId])
+  @@index([preorderId])
+}
+
+model WoltProduct {
+  id          Int       @id @default(autoincrement())
+  externalId  String    @unique
+  tenantId    String?
+  name        String
+  price       Decimal   @db.Decimal(12, 2)
+  rawPayload  Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
+}
+
+model WoltOrder {
+  id          Int        @id @default(autoincrement())
+  externalId  String     @unique
+  tenantId    String?
+  status      String
+  rawPayload  Json
+  preorder    Preorder[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
 }
 
 model Tenant {
