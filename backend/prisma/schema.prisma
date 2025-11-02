@@ -394,3 +394,139 @@ model PriceHistory {
   @@index([tenantId])
   @@index([productId])
 }
+
+model User {
+  id             Int         @id @default(autoincrement())
+  tenantId       String?
+  email          String      @unique
+  name           String
+  hashedPassword String
+  isActive       Boolean     @default(true)
+  lastLoginAt    DateTime?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  roles          UserRole[]
+  auditLogs      AuditLog[]
+  exportLogs     DatevExportLog[] @relation("DatevExportsTriggered")
+  csvPresets     CsvExportPreset[] @relation("CsvPresetOwners")
+  assignedRoles  UserRole[]        @relation("UserRoleAssignedBy")
+  grantedPermissions RolePermission[] @relation("RolePermissionAssignedBy")
+
+  @@index([tenantId])
+}
+
+model Role {
+  id           Int              @id @default(autoincrement())
+  tenantId     String?
+  name         String
+  description  String?
+  isSystem     Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  users        UserRole[]
+  permissions  RolePermission[]
+  auditLogs    AuditLog[]       @relation("AuditLogRole")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Permission {
+  id          Int               @id @default(autoincrement())
+  key         String            @unique
+  description String?
+  createdAt   DateTime          @default(now())
+  roles       RolePermission[]
+}
+
+model UserRole {
+  userId    Int
+  roleId    Int
+  assignedAt DateTime  @default(now())
+  assignedBy Int?
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedByUser User? @relation("UserRoleAssignedBy", fields: [assignedBy], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  assignedAt   DateTime  @default(now())
+  assignedBy   Int?
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  assignedByUser User?    @relation("RolePermissionAssignedBy", fields: [assignedBy], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model AuditLog {
+  id          Int       @id @default(autoincrement())
+  tenantId    String?
+  userId      Int?
+  roleId      Int?
+  actorEmail  String?
+  action      String
+  entity      String?
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role        Role?     @relation("AuditLogRole", fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+model ApiWebhook {
+  id             Int       @id @default(autoincrement())
+  tenantId       String?
+  event          String
+  targetUrl      String
+  secret         String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastTriggeredAt DateTime?
+  lastError      String?
+
+  @@index([tenantId])
+  @@index([event])
+}
+
+model CsvExportPreset {
+  id          Int      @id @default(autoincrement())
+  tenantId    String?
+  ownerId     Int?
+  name        String
+  description String?
+  columns     Json
+  delimiter   String   @default(",")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User?    @relation("CsvPresetOwners", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+}
+
+model DatevExportLog {
+  id            Int       @id @default(autoincrement())
+  tenantId      String?
+  fromDate      DateTime
+  toDate        DateTime
+  documentCount Int
+  totalAmount   Decimal   @db.Decimal(14, 2)
+  formatVersion String
+  checksum      String?
+  fileName      String
+  createdAt     DateTime  @default(now())
+  triggeredBy   Int?
+  user          User?     @relation("DatevExportsTriggered", fields: [triggeredBy], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
