@@ -66,6 +66,7 @@ export class IntegrationsService {
         paymentMethod: true,
         status: true,
         items: true,
+        reference: true,
       },
     });
 
