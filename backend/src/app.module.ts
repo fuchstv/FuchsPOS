@@ -6,6 +6,7 @@ import { RedisModule } from './redis/redis.module';
 import { PosModule } from './pos/pos.module';
 import { HardwareModule } from './hardware/hardware.module';
 import { MailerModule } from './mailer/mailer.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { MailerModule } from './mailer/mailer.module';
     HealthModule,
     HardwareModule,
     MailerModule,
+    FiscalModule,
     PosModule,
   ],
 })

@@ -355,6 +355,20 @@ export default function App() {
               <p className="font-semibold text-emerald-100">Beleg gespeichert</p>
               <p>Bonnummer: {latestSale.receiptNo}</p>
               <p>Gesamt: {currency.format(latestSale.total)}</p>
+              {latestSale.fiscalization && (
+                <div className="space-y-1 rounded-xl border border-emerald-400/30 bg-emerald-600/10 p-3 text-xs">
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-200/70">TSS-Daten</p>
+                  <p>Mandant: {latestSale.fiscalization.tenantId}</p>
+                  <p>TSS-ID: {latestSale.fiscalization.tssId}</p>
+                  <p>Kasse: {latestSale.fiscalization.cashRegisterId}</p>
+                  <p>Transaktion: {latestSale.fiscalization.transactionId}</p>
+                  {latestSale.fiscalization.signature?.value && (
+                    <p className="break-all text-[11px] text-emerald-100/90">
+                      Signatur: {latestSale.fiscalization.signature.value}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="mt-3 space-y-2 text-emerald-100/90">
                 <label htmlFor="receipt-email" className="text-xs uppercase tracking-wide text-emerald-200/70">
                   Bon erneut per E-Mail senden

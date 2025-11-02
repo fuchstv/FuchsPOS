@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -7,7 +8,8 @@ import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { PosHardwareService } from '../hardware/pos-hardware.service';
 import { MailerService } from '../mailer/mailer.service';
 import { renderReceiptEmail } from '../mailer/templates/receipt-email.template';
-import type { SalePayload } from './types/sale-payload';
+import type { FiscalMetadataPayload, SalePayload } from './types/sale-payload';
+import { FiscalizationService } from '../fiscal/fiscalization.service';
 
 const LATEST_SALE_TTL_SECONDS = 60 * 5;
 const CART_TTL_SECONDS = 60 * 60;
@@ -19,6 +21,7 @@ export class PosService {
     private readonly redis: RedisService,
     private readonly hardware: PosHardwareService,
     private readonly mailer: MailerService,
+    private readonly fiscalization: FiscalizationService,
   ) {}
 
   async syncCart(dto: SyncCartDto) {
@@ -45,7 +48,16 @@ export class PosService {
   }
 
   async processPayment(dto: CreatePaymentDto) {
-    const sale = await this.createSaleRecord(dto);
+    const total = Number(this.calculateTotal(dto).toFixed(2));
+    const receiptNo = this.generateReceiptNumber();
+
+    const fiscalization = await this.fiscalization.registerReceipt(receiptNo, dto, total);
+
+    const sale = await this.createSaleRecord(dto, {
+      receiptNo,
+      total,
+      fiscalization,
+    });
 
     await this.hardware.printReceipt(sale);
 
@@ -81,17 +93,22 @@ export class PosService {
     };
   }
 
-  private async createSaleRecord(dto: CreatePaymentDto): Promise<SalePayload> {
-    const total = Number(this.calculateTotal(dto).toFixed(2));
+  private async createSaleRecord(
+    dto: CreatePaymentDto,
+    options?: { receiptNo?: string; total?: number; fiscalization?: FiscalMetadataPayload | undefined },
+  ): Promise<SalePayload> {
+    const total = options?.total ?? Number(this.calculateTotal(dto).toFixed(2));
+    const receiptNo = options?.receiptNo ?? this.generateReceiptNumber();
 
     const sale = await this.prisma.sale.create({
       data: {
-        receiptNo: `R-${Date.now()}`,
+        receiptNo,
         paymentMethod: dto.paymentMethod,
         total,
         status: 'SUCCESS',
-        items: dto.items,
+        items: dto.items as unknown as Prisma.InputJsonValue,
         reference: dto.reference ?? null,
+        fiscalMetadata: options?.fiscalization,
       },
     });
 
@@ -103,7 +120,7 @@ export class PosService {
   }
 
   private toPayload(sale: any): SalePayload {
-    return {
+    const payload: SalePayload = {
       id: sale.id,
       receiptNo: sale.receiptNo,
       paymentMethod: sale.paymentMethod,
@@ -112,11 +129,20 @@ export class PosService {
       createdAt: new Date(sale.createdAt),
       items: (sale.items as SalePayload['items']) ?? [],
       reference: sale.reference,
+      fiscalization: sale.fiscalMetadata
+        ? (sale.fiscalMetadata as SalePayload['fiscalization'])
+        : undefined,
     };
+
+    return payload;
   }
 
   private calculateTotal(dto: CreatePaymentDto) {
     return dto.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  }
+
+  private generateReceiptNumber() {
+    return `R-${Date.now()}`;
   }
 
   private async clearCachedCart(terminalId: string) {

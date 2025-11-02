@@ -69,6 +69,31 @@ export function renderReceiptEmail(
             </tr>
           </tbody>
         </table>
+        ${
+          sale.fiscalization
+            ? `
+        <div style="margin-top:24px;padding:16px;border-radius:12px;background:rgba(30,41,59,0.6);border:1px solid rgba(148,163,184,0.2);">
+          <h2 style="font-size:14px;margin:0 0 8px 0;letter-spacing:0.08em;text-transform:uppercase;color:#38bdf8;">TSS-Daten</h2>
+          <p style="margin:4px 0;">Mandant: <strong>${sale.fiscalization.tenantId}</strong></p>
+          <p style="margin:4px 0;">TSS-ID: <strong>${sale.fiscalization.tssId}</strong></p>
+          <p style="margin:4px 0;">Kasse: <strong>${sale.fiscalization.cashRegisterId}</strong></p>
+          <p style="margin:4px 0;">Transaktion: <strong>${sale.fiscalization.transactionId}</strong></p>
+          ${
+            sale.fiscalization.signature?.value
+              ? `<p style="margin:4px 0;">Signatur: <code style="font-size:12px;">${sale.fiscalization.signature.value}</code></p>`
+              : ''
+          }
+          ${
+            sale.fiscalization.signature?.timestamp
+              ? `<p style="margin:4px 0;">Signiert am ${new Date(
+                  sale.fiscalization.signature.timestamp,
+                ).toLocaleString('de-DE')}</p>`
+              : ''
+          }
+        </div>
+        `
+            : ''
+        }
         <footer>
           <p>Erstellt am ${sale.createdAt.toLocaleString('de-DE')}.</p>
           <p>Bei Fragen erreichen Sie uns unter <a href="mailto:${supportEmail}" style="color:#38bdf8;">${supportEmail}</a>.</p>

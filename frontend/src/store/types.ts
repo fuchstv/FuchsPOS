@@ -56,6 +56,22 @@ export type SaleRecord = {
   createdAt: string;
   items: PaymentLineItem[];
   reference?: string | null;
+  fiscalization?: {
+    tenantId: string;
+    tssId: string;
+    cashRegisterId: string;
+    transactionId: string;
+    clientId: string;
+    processData?: Record<string, unknown>;
+    signature?: {
+      value?: string;
+      serialNumber?: string;
+      algorithm?: string;
+      publicKey?: string;
+      timestamp?: string;
+    };
+    finishedAt?: string;
+  };
 };
 
 export type SaleResponse = {
