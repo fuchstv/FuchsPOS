@@ -6,6 +6,25 @@ export type SaleItemPayload = {
   quantity: number;
 };
 
+export type FiscalSignaturePayload = {
+  value?: string;
+  serialNumber?: string;
+  algorithm?: string;
+  publicKey?: string;
+  timestamp?: string;
+};
+
+export type FiscalMetadataPayload = {
+  tenantId: string;
+  tssId: string;
+  cashRegisterId: string;
+  transactionId: string;
+  clientId: string;
+  processData?: Record<string, any>;
+  signature?: FiscalSignaturePayload;
+  finishedAt?: string;
+};
+
 export type SalePayload = {
   id: number;
   receiptNo: string;
@@ -15,4 +34,5 @@ export type SalePayload = {
   createdAt: Date;
   items: SaleItemPayload[];
   reference?: string | null;
+  fiscalization?: FiscalMetadataPayload;
 };
