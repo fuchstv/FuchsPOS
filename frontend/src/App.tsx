@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { io } from 'socket.io-client';
 import api from './api/client';
 import { usePosStore } from './store/posStore';
 import type { PaymentMethod } from './store/types';
@@ -34,6 +35,11 @@ export default function App() {
     initialize,
     setOffline,
     syncQueuedPayments,
+    preorders,
+    cashEvents,
+    updatePreorder,
+    addCashEvent,
+    applyRemoteSale,
   } = usePosStore();
 
   const [customerEmail, setCustomerEmail] = useState('');
@@ -83,6 +89,44 @@ export default function App() {
     [queuedPayments],
   );
 
+  const sortedCashEvents = useMemo(
+    () =>
+      [...cashEvents].sort(
+        (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+      ),
+    [cashEvents],
+  );
+
+  const formatStatusLabel = (status: string) => {
+    switch (status) {
+      case 'READY':
+        return 'Bereit';
+      case 'PICKED_UP':
+        return 'Abgeholt';
+      default:
+        return 'Bestellt';
+    }
+  };
+
+  const statusTone: Record<string, string> = {
+    ORDERED: 'border-indigo-400/40 bg-indigo-500/10 text-indigo-100',
+    READY: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100',
+    PICKED_UP: 'border-slate-400/40 bg-slate-500/10 text-slate-100',
+  };
+
+  const describeEvent = (type: string) => {
+    switch (type) {
+      case 'PREORDER_READY':
+        return 'Vorbestellung bereitgestellt';
+      case 'PREORDER_PICKED_UP':
+        return 'Vorbestellung abgeholt';
+      case 'SALE_COMPLETED':
+        return 'Verkauf abgeschlossen';
+      default:
+        return type;
+    }
+  };
+
   useEffect(() => {
     void initialize();
   }, [initialize]);
@@ -102,6 +146,39 @@ export default function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, [setOffline, syncQueuedPayments]);
+
+  useEffect(() => {
+    const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/api$/, '');
+    const socket = io(`${apiBase}/pos`, {
+      transports: ['websocket'],
+    });
+
+    socket.on('preorder.updated', payload => {
+      if (payload?.preorder) {
+        updatePreorder(payload.preorder);
+      }
+    });
+
+    socket.on('cash-event.created', payload => {
+      if (payload?.event) {
+        addCashEvent(payload.event);
+      }
+    });
+
+    socket.on('sale.completed', payload => {
+      if (payload?.sale) {
+        applyRemoteSale(payload.sale);
+      }
+    });
+
+    socket.on('connect_error', error => {
+      console.warn('WebSocket-Verbindung zum POS-Backend fehlgeschlagen.', error);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [updatePreorder, addCashEvent, applyRemoteSale]);
 
   useEffect(() => {
     if (paymentState === 'success' && customerEmail) {
@@ -446,6 +523,131 @@ export default function App() {
               )}
             </section>
           )}
+
+          <section className="space-y-3 rounded-2xl border border-indigo-400/40 bg-indigo-500/10 p-4 text-xs text-indigo-100">
+            <div className="flex items-center justify-between text-sm">
+              <h3 className="font-semibold text-indigo-100">Vorbestellungen</h3>
+              <span className="text-xs text-indigo-200/80">{preorders.length}</span>
+            </div>
+            {preorders.length === 0 ? (
+              <p className="text-xs text-indigo-200/80">Aktuell liegen keine offenen Vorbestellungen vor.</p>
+            ) : (
+              <ul className="space-y-3">
+                {preorders.map(preorder => (
+                  <li key={preorder.id} className="rounded-xl border border-indigo-300/30 bg-indigo-900/30 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-indigo-100">
+                          {preorder.customerName ?? 'Gastkundschaft'}
+                        </p>
+                        <p className="text-[11px] text-indigo-200/70">#{preorder.externalReference}</p>
+                        {preorder.scheduledPickup && (
+                          <p className="text-[11px] text-indigo-200/70">
+                            Abholung:{' '}
+                            {new Date(preorder.scheduledPickup).toLocaleTimeString('de-DE', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                          statusTone[preorder.status] ?? statusTone.ORDERED
+                        }`}
+                      >
+                        {formatStatusLabel(preorder.status)}
+                      </span>
+                    </div>
+                    <ul className="mt-2 space-y-1 text-[11px] text-indigo-100/90">
+                      {preorder.items.slice(0, 3).map(item => (
+                        <li
+                          key={`${preorder.id}-${item.sku ?? item.name}`}
+                          className="flex items-center justify-between gap-2"
+                        >
+                          <span>
+                            {item.quantity} × {item.name}
+                          </span>
+                          {typeof item.unitPrice === 'number' && (
+                            <span className="font-medium">
+                              {currency.format(item.unitPrice * item.quantity)}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                      {preorder.items.length > 3 && (
+                        <li className="text-[10px] text-indigo-200/70">
+                          + {preorder.items.length - 3} weitere Positionen
+                        </li>
+                      )}
+                    </ul>
+                    <div className="mt-3 space-y-1 text-[10px] text-indigo-200/70">
+                      {preorder.statusHistory
+                        .slice(-3)
+                        .reverse()
+                        .map(history => (
+                          <p key={history.id}>
+                            {new Date(history.createdAt).toLocaleTimeString('de-DE', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}{' '}
+                            · {formatStatusLabel(history.status)}
+                            {history.notes ? ` – ${history.notes}` : ''}
+                          </p>
+                        ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-cyan-400/40 bg-cyan-500/10 p-4 text-xs text-cyan-100">
+            <div className="flex items-center justify-between text-sm">
+              <h3 className="font-semibold text-cyan-100">Live-Kassenevents</h3>
+              <span className="text-xs text-cyan-200/80">{sortedCashEvents.length}</span>
+            </div>
+            {sortedCashEvents.length === 0 ? (
+              <p className="text-xs text-cyan-200/80">Noch keine Bewegungen aufgezeichnet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {sortedCashEvents.slice(0, 8).map(event => {
+                  const metadata = event.metadata as { documentNumber?: unknown } | undefined;
+                  const documentNumber =
+                    metadata && typeof metadata.documentNumber !== 'undefined'
+                      ? String(metadata.documentNumber)
+                      : null;
+
+                  return (
+                    <li key={event.id} className="rounded-lg border border-cyan-300/30 bg-cyan-900/30 p-2">
+                      <div className="flex items-center justify-between text-[11px] text-cyan-100/90">
+                        <span>
+                          {new Date(event.createdAt).toLocaleTimeString('de-DE', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="font-semibold uppercase tracking-wide">
+                          {describeEvent(event.type)}
+                        </span>
+                      </div>
+                      {event.sale?.receiptNo && (
+                        <p className="text-[10px] text-cyan-200/70">Bon {event.sale.receiptNo}</p>
+                      )}
+                      {event.preorder?.externalReference && (
+                        <p className="text-[10px] text-cyan-200/70">
+                          Vorbestellung #{event.preorder.externalReference}
+                        </p>
+                      )}
+                      {documentNumber && (
+                        <p className="text-[10px] text-cyan-200/70">Beleg {documentNumber}</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-400">
             <h3 className="text-sm font-semibold text-slate-200">Systemstatus</h3>

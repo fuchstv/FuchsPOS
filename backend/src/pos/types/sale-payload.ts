@@ -1,4 +1,9 @@
 import type { PaymentMethod } from '../dto/create-payment.dto';
+import type {
+  CashEventPayload,
+  DeliveryDocumentPayload,
+  PreorderSummaryPayload,
+} from '../../preorders/preorders.service';
 
 export type SaleItemPayload = {
   name: string;
@@ -35,4 +40,7 @@ export type SalePayload = {
   items: SaleItemPayload[];
   reference?: string | null;
   fiscalization?: FiscalMetadataPayload;
+  documents?: DeliveryDocumentPayload[];
+  cashEvents?: CashEventPayload[];
+  preorder?: PreorderSummaryPayload;
 };
