@@ -39,6 +39,7 @@ export type SalePayload = {
   createdAt: Date;
   items: SaleItemPayload[];
   reference?: string | null;
+  locationId?: string | null;
   fiscalization?: FiscalMetadataPayload;
   documents?: DeliveryDocumentPayload[];
   cashEvents?: CashEventPayload[];

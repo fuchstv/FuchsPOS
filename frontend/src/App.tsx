@@ -8,10 +8,12 @@ import {
 } from './routes/admin/access-control';
 import InventoryDashboard from './routes/inventory/InventoryDashboard';
 import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeContext';
+import ReportingDashboard from './routes/reporting/ReportingDashboard';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
   { to: '/inventory', label: 'Inventur' },
+  { to: '/reporting', label: 'Reporting' },
   { to: '/admin/access-control', label: 'Access Control' },
 ];
 
@@ -51,6 +53,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<PosDashboard />} />
               <Route path="/inventory" element={<InventoryDashboard />} />
+              <Route path="/reporting" element={<ReportingDashboard />} />
               <Route path="/admin/access-control" element={<AccessControlLayout />}>
                 <Route index element={<UsersPage />} />
                 <Route path="roles" element={<RolesPage />} />

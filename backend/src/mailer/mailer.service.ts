@@ -20,25 +20,14 @@ export class MailerService {
   }
 
   async sendReceiptEmail(to: string, subject: string, html: string) {
-    const from = this.configService.get<string>('SMTP_FROM', 'no-reply@fuchspos.local');
-
-    if (!this.smtpConfig) {
-      this.logger.log(`[MAIL MOCK] ${subject} -> ${to}`);
-      this.logger.debug(html);
-      return;
-    }
-
-    await this.dispatchMail({
-      from,
-      to,
-      subject,
-      html,
-      host: this.smtpConfig.host,
-      port: this.smtpConfig.port,
-    });
+    await this.sendMail({ to, subject, html });
   }
 
-  private async dispatchMail(options: {
+  async sendReportReadyEmail(to: string, subject: string, html: string) {
+    await this.sendMail({ to, subject, html });
+  }
+
+  private async deliverMail(options: {
     from: string;
     to: string;
     subject: string;
@@ -100,11 +89,30 @@ export class MailerService {
       socket.write(`${message}\r\n`);
       await readResponse([250]);
       await sendCommand('QUIT', [221]);
-      this.logger.log(`Receipt email dispatched to ${to}`);
+      this.logger.log(`E-Mail an ${to} gesendet: ${subject}`);
     } catch (error) {
       this.logger.error(`SMTP Versand fehlgeschlagen: ${error}`);
     } finally {
       socket.end();
     }
+  }
+
+  private async sendMail(options: { to: string; subject: string; html: string }) {
+    const from = this.configService.get<string>('SMTP_FROM', 'no-reply@fuchspos.local');
+
+    if (!this.smtpConfig) {
+      this.logger.log(`[MAIL MOCK] ${options.subject} -> ${options.to}`);
+      this.logger.debug(options.html);
+      return;
+    }
+
+    await this.deliverMail({
+      from,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      host: this.smtpConfig.host,
+      port: this.smtpConfig.port,
+    });
   }
 }

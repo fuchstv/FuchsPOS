@@ -130,6 +130,7 @@ export class PosService {
         status: 'SUCCESS',
         items: dto.items as unknown as Prisma.InputJsonValue,
         reference: dto.reference ?? null,
+        locationId: dto.locationId ?? null,
         fiscalMetadata: options?.fiscalization,
       },
     });
@@ -159,6 +160,7 @@ export class PosService {
       createdAt: new Date(sale.createdAt),
       items,
       reference: sale.reference,
+      locationId: sale.locationId,
       fiscalization: sale.fiscalMetadata
         ? (sale.fiscalMetadata as SalePayload['fiscalization'])
         : undefined,
