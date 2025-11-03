@@ -29,7 +29,7 @@ export class ReportingService {
 
   async getSalesSummary(query: DateRangeQueryDto) {
     const records = await this.prisma.sale.findMany({
-      where: this.buildSaleDateFilter(query),
+      where: this.buildSaleFilter(query),
       select: {
         id: true,
         total: true,
@@ -72,7 +72,7 @@ export class ReportingService {
   async getEmployeePerformance(query: EmployeePerformanceQueryDto) {
     const limit = query.limit ?? 10;
     const records = await this.prisma.sale.findMany({
-      where: this.buildSaleDateFilter(query),
+      where: this.buildSaleFilter(query),
       select: {
         id: true,
         total: true,
@@ -109,7 +109,7 @@ export class ReportingService {
 
   async getCategoryPerformance(query: DateRangeQueryDto) {
     const records = await this.prisma.sale.findMany({
-      where: this.buildSaleDateFilter(query),
+      where: this.buildSaleFilter(query),
       select: {
         items: true,
         total: true,
@@ -225,16 +225,34 @@ export class ReportingService {
     };
   }
 
-  private buildSaleDateFilter(query: DateRangeQueryDto): Prisma.SaleWhereInput {
-    if (!query.startDate && !query.endDate) {
-      return {};
+  async listLocations() {
+    const rows = await this.prisma.sale.findMany({
+      where: { locationId: { not: null } },
+      distinct: ['locationId'],
+      select: { locationId: true },
+      orderBy: { locationId: 'asc' },
+    });
+
+    return rows
+      .map((row) => row.locationId)
+      .filter((value): value is string => Boolean(value));
+  }
+
+  private buildSaleFilter(query: DateRangeQueryDto): Prisma.SaleWhereInput {
+    const where: Prisma.SaleWhereInput = {};
+
+    if (query.startDate || query.endDate) {
+      where.createdAt = {
+        gte: query.startDate ?? undefined,
+        lte: query.endDate ?? undefined,
+      };
     }
-    return {
-      createdAt: {
-        gte: query.startDate,
-        lte: query.endDate,
-      },
-    };
+
+    if (query.locationId) {
+      where.locationId = query.locationId;
+    }
+
+    return where;
   }
 
   private getPeriodKey(date: Date, granularity: Granularity) {

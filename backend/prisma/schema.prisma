@@ -21,6 +21,7 @@ model Sale {
   status        SaleStatus  @default(SUCCESS)
   items         Json
   reference     String?
+  locationId    String?
   createdAt     DateTime    @default(now())
   fiscalMetadata Json?
   documents     DeliveryDocument[]
@@ -43,6 +44,49 @@ enum CashEventType {
   SALE_COMPLETED
   PREORDER_READY
   PREORDER_PICKED_UP
+}
+
+enum ReportExportType {
+  SALES_SUMMARY
+  EMPLOYEE_PERFORMANCE
+  CATEGORY_PERFORMANCE
+}
+
+enum ReportExportFormat {
+  CSV
+  XLSX
+}
+
+enum ReportExportStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model ReportExport {
+  id                Int               @id @default(autoincrement())
+  type              ReportExportType
+  format            ReportExportFormat
+  status            ReportExportStatus @default(PENDING)
+  fingerprint       String            @unique
+  filters           Json?
+  fromDate          DateTime?
+  toDate            DateTime?
+  granularity       String?
+  locationId        String?
+  notificationEmail String?
+  fileName          String?
+  mimeType          String?
+  fileData          Bytes?
+  error             String?
+  createdAt         DateTime          @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
 }
 
 model Preorder {

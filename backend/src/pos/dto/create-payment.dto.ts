@@ -56,4 +56,8 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   terminalId?: string;
+
+  @IsOptional()
+  @IsString()
+  locationId?: string;
 }
