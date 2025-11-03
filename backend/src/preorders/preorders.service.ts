@@ -76,7 +76,9 @@ export class PreordersService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return preorders.map(preorder => this.toPreorderPayload(preorder));
+    const payload = preorders.map(preorder => this.toPreorderPayload(preorder));
+    void this.publishPreorderMetrics();
+    return payload;
   }
 
   async listRecentCashEvents(limit = 25): Promise<CashEventPayload[]> {
@@ -514,9 +516,29 @@ export class PreordersService {
 
   private emitPreorderUpdate(preorder: PreorderPayload) {
     this.realtime.broadcast('preorder.updated', { preorder });
+    void this.publishPreorderMetrics();
   }
 
   private emitCashEvent(event: CashEventPayload) {
     this.realtime.broadcast('cash-event.created', { event });
+  }
+
+  private async publishPreorderMetrics() {
+    try {
+      const [total, ready] = await Promise.all([
+        this.prisma.preorder.count({
+          where: { status: { in: [PreorderStatus.ORDERED, PreorderStatus.READY] } },
+        }),
+        this.prisma.preorder.count({ where: { status: PreorderStatus.READY } }),
+      ]);
+      this.realtime.broadcastQueueMetrics('preorders', { total, ready });
+    } catch (error) {
+      this.logger.warn(
+        `Preorder-Metriken konnten nicht ermittelt werden: ${error instanceof Error ? error.message : error}`,
+      );
+      this.realtime.broadcastSystemError('preorders', 'Metriken für Vorbestellungen konnten nicht berechnet werden.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

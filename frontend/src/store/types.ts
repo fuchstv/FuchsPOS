@@ -37,7 +37,16 @@ export type PaymentRequestPayload = {
   terminalId: string;
 };
 
-export type PaymentIntentStatus = 'pending' | 'failed';
+export type PaymentIntentStatus = 'pending' | 'failed' | 'conflict';
+
+export type PaymentConflict = {
+  type: 'duplicate-sale' | 'unknown';
+  message: string;
+  detectedAt: string;
+  saleId?: number;
+  receiptNo?: string;
+  resolved?: boolean;
+};
 
 export type PaymentIntent = {
   id: string;
@@ -45,6 +54,10 @@ export type PaymentIntent = {
   createdAt: string;
   status: PaymentIntentStatus;
   error?: string;
+  retryCount: number;
+  lastAttemptAt?: string;
+  nextRetryAt?: string;
+  conflict?: PaymentConflict;
 };
 
 export type DeliveryDocumentType = 'DELIVERY_NOTE' | 'PICKUP_RECEIPT';

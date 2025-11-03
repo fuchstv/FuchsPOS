@@ -20,6 +20,21 @@ interface PersistedCatalog {
 
 interface PersistedPayment extends PaymentIntent {}
 
+export type OfflineDiagnostics = {
+  supported: boolean;
+  cart: { items: number; updatedAt: string | null; grossTotal?: number } | null;
+  catalog: { items: number; updatedAt: string | null } | null;
+  payments: {
+    total: number;
+    pending: number;
+    failed: number;
+    conflict: number;
+    nextRetryAt?: string | null;
+    latestAttemptAt?: string | null;
+  };
+  terminalId?: string | null;
+};
+
 const DB_NAME = 'fuchspos';
 const DB_VERSION = 1;
 const CART_KEY = 'active';
@@ -180,33 +195,47 @@ function createUuid() {
   return `queued-${Math.random().toString(16).slice(2)}-${Date.now()}`;
 }
 
+function normalisePayment(payment: PersistedPayment): PersistedPayment {
+  return {
+    ...payment,
+    status: payment.status ?? 'pending',
+    retryCount: typeof payment.retryCount === 'number' ? payment.retryCount : 0,
+    nextRetryAt: payment.nextRetryAt ?? undefined,
+    lastAttemptAt: payment.lastAttemptAt ?? undefined,
+  };
+}
+
 export async function enqueuePayment(payload: PaymentRequestPayload) {
   const record: PersistedPayment = {
     id: createUuid(),
     createdAt: now(),
     status: 'pending',
     payload,
+    retryCount: 0,
+    nextRetryAt: now(),
   };
 
   if (!isBrowser) {
-    memoryStore.payments.set(record.id, record);
-    return record;
+    const normalised = normalisePayment(record);
+    memoryStore.payments.set(record.id, normalised);
+    return normalised;
   }
 
   await runTransaction('payments', 'readwrite', store => {
     store.add(record);
   });
 
-  return record;
+  return normalisePayment(record);
 }
 
 export async function listQueuedPayments() {
   if (!isBrowser) {
-    return Array.from(memoryStore.payments.values());
+    return Array.from(memoryStore.payments.values()).map(normalisePayment);
   }
 
   try {
-    return (await runTransaction('payments', 'readonly', store => store.getAll())) as PersistedPayment[];
+    const payments = (await runTransaction('payments', 'readonly', store => store.getAll())) as PersistedPayment[];
+    return payments.map(normalisePayment);
   } catch (error) {
     console.warn('Konnte Zahlungswarteschlange nicht laden', error);
     return [];
@@ -225,25 +254,43 @@ export async function removeQueuedPayment(id: string) {
 }
 
 export async function markPaymentFailed(id: string, error: string) {
+  await patchQueuedPayment(id, {
+    status: 'failed',
+    error,
+    lastAttemptAt: now(),
+  });
+}
+
+export async function patchQueuedPayment(
+  id: string,
+  patch: Partial<PersistedPayment>,
+): Promise<PersistedPayment | null> {
   if (!isBrowser) {
     const existing = memoryStore.payments.get(id);
-    if (existing) {
-      existing.status = 'failed';
-      existing.error = error;
-      memoryStore.payments.set(id, existing);
+    if (!existing) {
+      return null;
     }
-    return;
+    const updated = normalisePayment({ ...existing, ...patch });
+    memoryStore.payments.set(id, updated);
+    return updated;
   }
 
-  await runTransaction('payments', 'readwrite', store => {
-    const request = store.get(id);
-    request.onsuccess = () => {
-      const value = request.result as PersistedPayment | undefined;
-      if (!value) return;
-      value.status = 'failed';
-      value.error = error;
-      store.put(value);
-    };
+  return runTransaction('payments', 'readwrite', store => {
+    return new Promise<PersistedPayment | null>((resolve, reject) => {
+      const request = store.get(id);
+      request.onerror = () => reject(request.error ?? new Error('Zahlung konnte nicht geladen werden'));
+      request.onsuccess = () => {
+        const current = request.result as PersistedPayment | undefined;
+        if (!current) {
+          resolve(null);
+          return;
+        }
+        const updated = normalisePayment({ ...current, ...patch });
+        const put = store.put(updated);
+        put.onsuccess = () => resolve(updated);
+        put.onerror = () => reject(put.error ?? new Error('Zahlung konnte nicht aktualisiert werden'));
+      };
+    });
   });
 }
 
@@ -327,4 +374,101 @@ export async function loadPreferredPaymentMethods(): Promise<PaymentMethod[] | n
     console.warn('Konnte bevorzugte Zahlarten nicht laden', error);
     return null;
   }
+}
+
+export async function loadOfflineDiagnostics(): Promise<OfflineDiagnostics> {
+  if (!isBrowser) {
+    const payments = Array.from(memoryStore.payments.values()).map(normalisePayment);
+    const pending = payments.filter(payment => payment.status === 'pending').length;
+    const failed = payments.filter(payment => payment.status === 'failed').length;
+    const conflict = payments.filter(payment => payment.status === 'conflict').length;
+    const nextRetryAt = payments
+      .map(payment => (payment.nextRetryAt ? new Date(payment.nextRetryAt).getTime() : null))
+      .filter((value): value is number => value !== null)
+      .reduce<number | null>((earliest, timestamp) => {
+        if (earliest === null || timestamp < earliest) {
+          return timestamp;
+        }
+        return earliest;
+      }, null);
+    const latestAttempt = payments
+      .map(payment => (payment.lastAttemptAt ? new Date(payment.lastAttemptAt).getTime() : null))
+      .filter((value): value is number => value !== null)
+      .reduce<number | null>((latest, timestamp) => {
+        if (latest === null || timestamp > latest) {
+          return timestamp;
+        }
+        return latest;
+      }, null);
+
+    return {
+      supported: false,
+      cart: memoryStore.cart
+        ? {
+            items: memoryStore.cart.items.length,
+            updatedAt: memoryStore.cart.updatedAt,
+            grossTotal: memoryStore.cart.totals.gross,
+          }
+        : null,
+      catalog: memoryStore.catalog
+        ? { items: memoryStore.catalog.items.length, updatedAt: memoryStore.catalog.updatedAt }
+        : null,
+      payments: {
+        total: payments.length,
+        pending,
+        failed,
+        conflict,
+        nextRetryAt: nextRetryAt ? new Date(nextRetryAt).toISOString() : null,
+        latestAttemptAt: latestAttempt ? new Date(latestAttempt).toISOString() : null,
+      },
+      terminalId: memoryStore.metadata.get('terminalId') ?? null,
+    };
+  }
+
+  const [cartRecord, catalogRecord, payments, terminalId] = await Promise.all([
+    runTransaction('cart', 'readonly', store => store.get(CART_KEY)) as Promise<PersistedCart | null>,
+    runTransaction('catalog', 'readonly', store => store.get(CATALOG_KEY)) as Promise<PersistedCatalog | null>,
+    listQueuedPayments(),
+    loadTerminalId(),
+  ]);
+
+  const pending = payments.filter(payment => payment.status === 'pending').length;
+  const failed = payments.filter(payment => payment.status === 'failed').length;
+  const conflict = payments.filter(payment => payment.status === 'conflict').length;
+  const nextRetryAt = payments
+    .map(payment => (payment.nextRetryAt ? new Date(payment.nextRetryAt).getTime() : null))
+    .filter((value): value is number => value !== null)
+    .reduce<number | null>((earliest, timestamp) => {
+      if (earliest === null || timestamp < earliest) {
+        return timestamp;
+      }
+      return earliest;
+    }, null);
+
+  const latestAttempt = payments
+    .map(payment => (payment.lastAttemptAt ? new Date(payment.lastAttemptAt).getTime() : null))
+    .filter((value): value is number => value !== null)
+    .reduce<number | null>((latest, timestamp) => {
+      if (latest === null || timestamp > latest) {
+        return timestamp;
+      }
+      return latest;
+    }, null);
+
+  return {
+    supported: true,
+    cart: cartRecord
+      ? { items: cartRecord.items.length, updatedAt: cartRecord.updatedAt, grossTotal: cartRecord.totals.gross }
+      : null,
+    catalog: catalogRecord ? { items: catalogRecord.items.length, updatedAt: catalogRecord.updatedAt } : null,
+    payments: {
+      total: payments.length,
+      pending,
+      failed,
+      conflict,
+      nextRetryAt: nextRetryAt ? new Date(nextRetryAt).toISOString() : null,
+      latestAttemptAt: latestAttempt ? new Date(latestAttempt).toISOString() : null,
+    },
+    terminalId,
+  };
 }

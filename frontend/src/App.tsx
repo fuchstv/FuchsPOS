@@ -9,19 +9,23 @@ import {
 import InventoryDashboard from './routes/inventory/InventoryDashboard';
 import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeContext';
 import ReportingDashboard from './routes/reporting/ReportingDashboard';
+import DiagnosticsPage from './routes/diagnostics/DiagnosticsPage';
+import { PosRealtimeProvider } from './realtime/PosRealtimeContext';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
   { to: '/inventory', label: 'Inventur' },
   { to: '/reporting', label: 'Reporting' },
+  { to: '/diagnostics', label: 'Diagnose' },
   { to: '/admin/access-control', label: 'Access Control' },
 ];
 
 export default function App() {
   return (
-    <InventoryRealtimeProvider>
-      <BrowserRouter>
-        <div className="min-h-screen bg-slate-950 text-slate-100">
+    <PosRealtimeProvider>
+      <InventoryRealtimeProvider>
+        <BrowserRouter>
+          <div className="min-h-screen bg-slate-950 text-slate-100">
           <header className="border-b border-slate-900/80 bg-slate-950/80 backdrop-blur">
             <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
               <NavLink to="/" className="text-lg font-semibold tracking-tight text-white">
@@ -49,21 +53,23 @@ export default function App() {
             </div>
           </header>
 
-          <main>
-            <Routes>
-              <Route path="/" element={<PosDashboard />} />
-              <Route path="/inventory" element={<InventoryDashboard />} />
-              <Route path="/reporting" element={<ReportingDashboard />} />
-              <Route path="/admin/access-control" element={<AccessControlLayout />}>
-                <Route index element={<UsersPage />} />
-                <Route path="roles" element={<RolesPage />} />
-                <Route path="audit-log" element={<AuditLogPage />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
-      </BrowserRouter>
-    </InventoryRealtimeProvider>
+            <main>
+              <Routes>
+                <Route path="/" element={<PosDashboard />} />
+                <Route path="/inventory" element={<InventoryDashboard />} />
+                <Route path="/reporting" element={<ReportingDashboard />} />
+                <Route path="/diagnostics" element={<DiagnosticsPage />} />
+                <Route path="/admin/access-control" element={<AccessControlLayout />}>
+                  <Route index element={<UsersPage />} />
+                  <Route path="roles" element={<RolesPage />} />
+                  <Route path="audit-log" element={<AuditLogPage />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+          </div>
+        </BrowserRouter>
+      </InventoryRealtimeProvider>
+    </PosRealtimeProvider>
   );
 }

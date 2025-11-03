@@ -54,40 +54,50 @@ export class PosService {
   }
 
   async processPayment(dto: CreatePaymentDto) {
-    const total = Number(this.calculateTotal(dto).toFixed(2));
-    const receiptNo = this.generateReceiptNumber();
+    try {
+      const total = Number(this.calculateTotal(dto).toFixed(2));
+      const receiptNo = this.generateReceiptNumber();
 
-    const fiscalization = await this.fiscalization.registerReceipt(receiptNo, dto, total);
+      const fiscalization = await this.fiscalization.registerReceipt(receiptNo, dto, total);
 
-    const sale = await this.createSaleEntity(dto, {
-      receiptNo,
-      total,
-      fiscalization,
-    });
+      const sale = await this.createSaleEntity(dto, {
+        receiptNo,
+        total,
+        fiscalization,
+      });
 
-    const basePayload = this.toBaseSalePayload(sale);
+      const basePayload = this.toBaseSalePayload(sale);
 
-    await this.hardware.printReceipt(basePayload);
+      await this.hardware.printReceipt(basePayload);
 
-    if (dto.customerEmail) {
-      const { subject, html } = renderReceiptEmail(basePayload, { businessName: 'FuchsPOS' });
-      await this.mailer.sendReceiptEmail(dto.customerEmail, subject, html);
+      if (dto.customerEmail) {
+        const { subject, html } = renderReceiptEmail(basePayload, { businessName: 'FuchsPOS' });
+        await this.mailer.sendReceiptEmail(dto.customerEmail, subject, html);
+      }
+
+      if (dto.terminalId) {
+        await this.clearCachedCart(dto.terminalId);
+      }
+
+      await this.preorders.handleSaleCompletion(sale, dto.reference ?? null);
+
+      const payload = await this.buildSalePayload(sale);
+      await this.redis.setJson('pos:latest-sale', payload, LATEST_SALE_TTL_SECONDS);
+      this.realtime.broadcast('sale.completed', { sale: payload });
+      this.realtime.broadcastQueueMetrics('payments', {
+        pending: 0,
+        lastReceipt: payload.receiptNo,
+        lastTotal: payload.total,
+      });
+
+      return {
+        message: 'Payment processed successfully',
+        sale: payload,
+      };
+    } catch (error) {
+      this.realtime.broadcastSystemError('payments', error);
+      throw error;
     }
-
-    if (dto.terminalId) {
-      await this.clearCachedCart(dto.terminalId);
-    }
-
-    await this.preorders.handleSaleCompletion(sale, dto.reference ?? null);
-
-    const payload = await this.buildSalePayload(sale);
-    await this.redis.setJson('pos:latest-sale', payload, LATEST_SALE_TTL_SECONDS);
-    this.realtime.broadcast('sale.completed', { sale: payload });
-
-    return {
-      message: 'Payment processed successfully',
-      sale: payload,
-    };
   }
 
   async sendReceiptEmail(dto: EmailReceiptDto) {
