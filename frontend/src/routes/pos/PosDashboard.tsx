@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { io } from 'socket.io-client';
 import api from '../../api/client';
 import { usePosStore } from '../../store/posStore';
 import type { PaymentMethod } from '../../store/types';
+import { usePosRealtime } from '../../realtime/PosRealtimeContext';
 
 type HealthStatus = {
   status: string;
@@ -50,6 +50,7 @@ export default function PosDashboard() {
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const { client: realtimeClient, status: realtimeStatus } = usePosRealtime();
 
   const cartWithDetails = useMemo(() =>
     cart
@@ -86,6 +87,11 @@ export default function PosDashboard() {
 
   const failedQueuedPayments = useMemo(
     () => queuedPayments.filter(payment => payment.status === 'failed'),
+    [queuedPayments],
+  );
+
+  const conflictingPayments = useMemo(
+    () => queuedPayments.filter(payment => payment.status === 'conflict'),
     [queuedPayments],
   );
 
@@ -127,6 +133,29 @@ export default function PosDashboard() {
     }
   };
 
+  const formatRetryInfo = (payment: (typeof queuedPayments)[number]) => {
+    if (payment.status === 'pending') {
+      if (payment.nextRetryAt) {
+        const next = new Date(payment.nextRetryAt);
+        return `Nächster Versuch um ${next.toLocaleTimeString('de-DE', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`;
+      }
+      return payment.retryCount > 0 ? `Warte auf erneuten Versuch (${payment.retryCount})` : 'Wartet auf Synchronisation';
+    }
+
+    if (payment.status === 'failed') {
+      return payment.error ?? 'Letzter Versuch fehlgeschlagen.';
+    }
+
+    if (payment.status === 'conflict') {
+      return payment.conflict?.message ?? 'Konflikt erkannt. Bitte prüfen.';
+    }
+
+    return null;
+  };
+
   useEffect(() => {
     void initialize();
   }, [initialize]);
@@ -148,37 +177,39 @@ export default function PosDashboard() {
   }, [setOffline, syncQueuedPayments]);
 
   useEffect(() => {
-    const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/api$/, '');
-    const socket = io(`${apiBase}/pos`, {
-      transports: ['websocket'],
-    });
+    if (!realtimeClient) {
+      return () => undefined;
+    }
 
-    socket.on('preorder.updated', payload => {
+    const offPreorder = realtimeClient.on('preorder.updated', payload => {
       if (payload?.preorder) {
         updatePreorder(payload.preorder);
       }
     });
 
-    socket.on('cash-event.created', payload => {
+    const offCash = realtimeClient.on('cash-event.created', payload => {
       if (payload?.event) {
         addCashEvent(payload.event);
       }
     });
 
-    socket.on('sale.completed', payload => {
+    const offSale = realtimeClient.on('sale.completed', payload => {
       if (payload?.sale) {
         applyRemoteSale(payload.sale);
       }
     });
 
-    socket.on('connect_error', error => {
-      console.warn('WebSocket-Verbindung zum POS-Backend fehlgeschlagen.', error);
+    const offError = realtimeClient.on('error', error => {
+      console.warn('Realtime-Verbindung zum POS-Backend meldete einen Fehler.', error);
     });
 
     return () => {
-      socket.disconnect();
+      offPreorder();
+      offCash();
+      offSale();
+      offError();
     };
-  }, [updatePreorder, addCashEvent, applyRemoteSale]);
+  }, [realtimeClient, updatePreorder, addCashEvent, applyRemoteSale]);
 
   useEffect(() => {
     if (paymentState === 'success' && customerEmail) {
@@ -502,16 +533,38 @@ export default function PosDashboard() {
                 {queuedPayments.map(payment => (
                   <li
                     key={payment.id}
-                    className="flex items-center justify-between rounded-lg bg-slate-950/60 px-3 py-2"
+                    className="space-y-1 rounded-lg bg-slate-950/60 px-3 py-2"
                   >
-                    <span>{new Date(payment.createdAt).toLocaleTimeString('de-DE')}</span>
-                    <span
-                      className={`text-xs font-semibold ${
-                        payment.status === 'failed' ? 'text-rose-300' : 'text-emerald-300'
-                      }`}
-                    >
-                      {payment.status === 'failed' ? 'Fehlgeschlagen' : 'Ausstehend'}
-                    </span>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                      <span>{new Date(payment.createdAt).toLocaleTimeString('de-DE')}</span>
+                      <span>{payment.payload.paymentMethod}</span>
+                      <span>#{payment.payload.terminalId ?? 'lokal'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span
+                        className={`font-semibold ${
+                          payment.status === 'failed'
+                            ? 'text-rose-300'
+                            : payment.status === 'conflict'
+                            ? 'text-amber-300'
+                            : 'text-emerald-300'
+                        }`}
+                      >
+                        {payment.status === 'failed'
+                          ? 'Fehlgeschlagen'
+                          : payment.status === 'conflict'
+                          ? 'Konflikt'
+                          : 'Ausstehend'}
+                      </span>
+                      {payment.retryCount > 0 && (
+                        <span className="text-[11px] text-slate-400">
+                          {payment.retryCount} Versuch{payment.retryCount === 1 ? '' : 'e'}
+                        </span>
+                      )}
+                    </div>
+                    {formatRetryInfo(payment) && (
+                      <p className="text-[11px] text-slate-400">{formatRetryInfo(payment)}</p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -519,6 +572,12 @@ export default function PosDashboard() {
                 <p className="text-xs text-rose-300">
                   {failedQueuedPayments.length} Vorgang{failedQueuedPayments.length > 1 ? 'e' : ''} benötigen
                   Aufmerksamkeit. Bitte prüfe die Zahlungsmittel oder versuche es erneut.
+                </p>
+              )}
+              {conflictingPayments.length > 0 && (
+                <p className="text-xs text-amber-300">
+                  {conflictingPayments.length} Vorgang{conflictingPayments.length > 1 ? 'e' : ''} mit Konflikten
+                  erkannt. Bitte gleiche Belege ab und löse den Konflikt manuell.
                 </p>
               )}
             </section>
@@ -651,9 +710,27 @@ export default function PosDashboard() {
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-400">
             <h3 className="text-sm font-semibold text-slate-200">Systemstatus</h3>
+            <p className="mt-2">
+              Realtime:{' '}
+              <span
+                className={
+                  realtimeStatus === 'connected'
+                    ? 'text-emerald-300'
+                    : realtimeStatus === 'connecting'
+                    ? 'text-amber-300'
+                    : 'text-rose-300'
+                }
+              >
+                {realtimeStatus === 'connected'
+                  ? 'Verbunden'
+                  : realtimeStatus === 'connecting'
+                  ? 'Verbindungsaufbau …'
+                  : 'Getrennt'}
+              </span>
+            </p>
             {health ? (
               <div className="mt-2 space-y-1">
-                <p>
+                <p className="mt-1">
                   Backend:{' '}
                   <span className={health.status === 'ok' ? 'text-emerald-300' : 'text-amber-300'}>
                     {health.status.toUpperCase()}

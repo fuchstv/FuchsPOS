@@ -21,9 +21,10 @@ import {
   loadCart as loadPersistedCart,
   loadCatalog as loadPersistedCatalog,
   loadPreferredPaymentMethods,
-  markPaymentFailed,
   persistCart as persistCartLocally,
   persistCatalog,
+  patchQueuedPayment,
+  removeQueuedPayment as removeQueuedPaymentRecord,
 } from './offlineStorage';
 
 const defaultCatalog: CatalogItem[] = [
@@ -88,12 +89,27 @@ type PosStore = {
   initialize: () => Promise<void>;
   setOffline: (isOffline: boolean) => void;
   syncQueuedPayments: () => Promise<void>;
+  retryQueuedPayment: (id: string) => Promise<void>;
+  removeQueuedPayment: (id: string) => Promise<void>;
   updatePreorder: (preorder: PreorderRecord) => void;
   addCashEvent: (event: CashEventRecord) => void;
   applyRemoteSale: (sale: SaleRecord) => void;
 };
 
 const MAX_CASH_EVENTS = 50;
+
+const BASE_RETRY_DELAY_MS = 5000;
+const MAX_RETRY_DELAY_MS = 120000;
+const RETRY_JITTER_MS = 1000;
+
+const computeNextRetryAt = (retryCount: number) => {
+  const exponent = Math.min(retryCount, 6);
+  const baseDelay = BASE_RETRY_DELAY_MS * 2 ** exponent;
+  const delay = Math.min(baseDelay, MAX_RETRY_DELAY_MS) + Math.floor(Math.random() * RETRY_JITTER_MS);
+  return new Date(Date.now() + delay).toISOString();
+};
+
+let queueRetryInterval: ReturnType<typeof setInterval> | null = null;
 
 const mergeCashEvents = (existing: CashEventRecord[], incoming: CashEventRecord[]): CashEventRecord[] => {
   if (!incoming.length) {
@@ -220,6 +236,24 @@ export const usePosStore = create<PosStore>((set, get) => {
     }
 
     return totals;
+  };
+
+  const applyQueuedPaymentPatch = async (id: string, patch: Partial<PaymentIntent>) => {
+    set(state => ({
+      queuedPayments: state.queuedPayments.map(item => (item.id === id ? { ...item, ...patch } : item)),
+    }));
+
+    const updated = await patchQueuedPayment(id, patch);
+    if (updated) {
+      set(state => ({
+        queuedPayments: state.queuedPayments.map(item => (item.id === id ? updated : item)),
+      }));
+    }
+  };
+
+  const removeQueuedPaymentInternal = async (id: string) => {
+    set(state => ({ queuedPayments: state.queuedPayments.filter(item => item.id !== id) }));
+    await removeQueuedPaymentRecord(id);
   };
 
   const buildPaymentPayload = (
@@ -350,9 +384,19 @@ export const usePosStore = create<PosStore>((set, get) => {
             isOffline: true,
             cart: [],
           }));
+          const nowIso = new Date().toISOString();
+          await applyQueuedPaymentPatch(queued.id, {
+            error: 'Zahlung offline gespeichert. Sie wird automatisch übertragen.',
+            lastAttemptAt: nowIso,
+          });
           await persistCart([]);
         } else {
-          set({ paymentState: 'error', error: message });
+          const status = error.response?.status;
+          const conflictMessage =
+            status === 409
+              ? `${message} Bitte prüfe doppelte Belege oder Markiere die Zahlung manuell als geklärt.`
+              : message;
+          set({ paymentState: 'error', error: conflictMessage });
         }
       }
     },
@@ -391,7 +435,9 @@ export const usePosStore = create<PosStore>((set, get) => {
       set({
         catalog,
         cart: storedCart?.items ?? [],
-        queuedPayments,
+        queuedPayments: [...queuedPayments].sort(
+          (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
+        ),
         paymentMethods: mergePaymentPreferences(preferredMethods, defaultPaymentMethods),
         terminalId,
         initialized: true,
@@ -406,24 +452,64 @@ export const usePosStore = create<PosStore>((set, get) => {
       if (queuedPayments.length && (typeof navigator === 'undefined' || navigator.onLine)) {
         await get().syncQueuedPayments();
       }
+
+      if (typeof window !== 'undefined' && !queueRetryInterval) {
+        queueRetryInterval = setInterval(() => {
+          const { queuedPayments: queue } = get();
+          if (!queue.length) {
+            return;
+          }
+          const due = queue.some(payment => {
+            if (payment.status !== 'pending') {
+              return false;
+            }
+            if (!payment.nextRetryAt) {
+              return true;
+            }
+            return new Date(payment.nextRetryAt).getTime() <= Date.now();
+          });
+          if (due && (typeof navigator === 'undefined' || navigator.onLine)) {
+            void get().syncQueuedPayments();
+          }
+        }, 8000);
+      }
     },
-    setOffline: isOffline => set({ isOffline }),
+    setOffline: isOffline => {
+      set({ isOffline });
+      if (!isOffline && (typeof navigator === 'undefined' || navigator.onLine)) {
+        void get().syncQueuedPayments();
+      }
+    },
     syncQueuedPayments: async () => {
       const state = get();
       if (!state.queuedPayments.length) {
         return;
       }
 
-      for (const payment of [...state.queuedPayments]) {
+      const now = Date.now();
+      const sorted = [...state.queuedPayments].sort(
+        (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
+      );
+
+      for (const payment of sorted) {
+        if (payment.status === 'conflict' || payment.status === 'failed') {
+          continue;
+        }
+
+        if (payment.nextRetryAt && new Date(payment.nextRetryAt).getTime() > now) {
+          continue;
+        }
+
         try {
           const { data } = await api.post<SaleResponse>('/pos/payments', payment.payload);
 
           await persistCart([]);
 
+          await removeQueuedPaymentInternal(payment.id);
+
           set(current => {
             const effects = applySaleEffects(current, data.sale);
             return {
-              queuedPayments: current.queuedPayments.filter(item => item.id !== payment.id),
               paymentState: 'success',
               latestSale: data.sale,
               cart: [],
@@ -434,25 +520,95 @@ export const usePosStore = create<PosStore>((set, get) => {
             };
           });
         } catch (error: any) {
+          const nowIso = new Date().toISOString();
+
           if (!error?.response) {
+            const retryCount = payment.retryCount + 1;
+            const nextRetryAt = computeNextRetryAt(retryCount);
+            await applyQueuedPaymentPatch(payment.id, {
+              status: 'pending',
+              error: 'Keine Verbindung zum Server. Automatischer erneuter Versuch folgt.',
+              retryCount,
+              nextRetryAt,
+              lastAttemptAt: nowIso,
+            });
             set({ isOffline: true, paymentState: 'queued' });
             break;
           }
 
+          const status = error.response?.status;
           const message =
             error?.response?.data?.message ?? error?.message ?? 'Zahlung konnte nicht synchronisiert werden.';
 
-          await markPaymentFailed(payment.id, message);
+          if (status === 409) {
+            const conflict = {
+              type: 'duplicate-sale' as const,
+              message,
+              detectedAt: nowIso,
+              saleId: error.response?.data?.sale?.id,
+              receiptNo: error.response?.data?.sale?.receiptNo,
+            };
+            await applyQueuedPaymentPatch(payment.id, {
+              status: 'conflict',
+              error: message,
+              conflict,
+              lastAttemptAt: nowIso,
+              nextRetryAt: undefined,
+            });
+            set({ paymentState: 'error', error: 'Konflikt beim Übertragen einer Zahlung erkannt.' });
+            continue;
+          }
+
+          if (status && (status >= 500 || status === 429)) {
+            const retryCount = payment.retryCount + 1;
+            const nextRetryAt = computeNextRetryAt(retryCount);
+            await applyQueuedPaymentPatch(payment.id, {
+              status: 'pending',
+              error: message,
+              retryCount,
+              nextRetryAt,
+              lastAttemptAt: nowIso,
+            });
+            set({ paymentState: 'queued', error: message });
+            continue;
+          }
+
+          await applyQueuedPaymentPatch(payment.id, {
+            status: 'failed',
+            error: message,
+            lastAttemptAt: nowIso,
+            nextRetryAt: undefined,
+          });
 
           set(current => ({
-            queuedPayments: current.queuedPayments.map(item =>
-              item.id === payment.id ? { ...item, status: 'failed', error: message } : item,
-            ),
+            queuedPayments: current.queuedPayments,
             paymentState: 'error',
             error: message,
           }));
         }
       }
+    },
+    retryQueuedPayment: async id => {
+      const payment = get().queuedPayments.find(item => item.id === id);
+      if (!payment) {
+        return;
+      }
+
+      const nextRetryAt = new Date().toISOString();
+      await applyQueuedPaymentPatch(id, {
+        status: 'pending',
+        error: undefined,
+        conflict: undefined,
+        nextRetryAt,
+        lastAttemptAt: undefined,
+      });
+
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        await get().syncQueuedPayments();
+      }
+    },
+    removeQueuedPayment: async id => {
+      await removeQueuedPaymentInternal(id);
     },
     updatePreorder: preorder => {
       set(state => ({ preorders: mergePreorders(state.preorders, preorder) }));

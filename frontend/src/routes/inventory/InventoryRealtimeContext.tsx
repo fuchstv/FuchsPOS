@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { usePosRealtime } from '../../realtime/PosRealtimeContext';
 
 export type InventoryRealtimeEventType =
   | 'goods-receipt'
@@ -31,19 +31,14 @@ function buildEventId(type: InventoryRealtimeEventType) {
 
 export function InventoryRealtimeProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<InventoryRealtimeEvent[]>([]);
+  const { client } = usePosRealtime();
 
   const pushEvent = useCallback((event: InventoryRealtimeEvent) => {
     setEvents(previous => [event, ...previous].slice(0, MAX_EVENTS));
   }, []);
 
   useEffect(() => {
-    const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace(/\/api$/, '');
-    let socket: Socket | undefined;
-
-    try {
-      socket = io(`${apiBase}/pos`, { transports: ['websocket'] });
-    } catch (error) {
-      console.warn('Inventur-Realtime-Verbindung konnte nicht aufgebaut werden.', error);
+    if (!client) {
       return () => undefined;
     }
 
@@ -105,17 +100,16 @@ export function InventoryRealtimeProvider({ children }: { children: React.ReactN
       ],
     ];
 
-    handlers.forEach(([event, handler]) => socket?.on(event, handler));
-
-    socket.on('connect_error', error => {
-      console.warn('Inventur-Realtime-Verbindung fehlgeschlagen.', error);
+    const subscriptions = handlers.map(([event, handler]) => client.on(event, handler));
+    const unsubscribeError = client.on('error', error => {
+      console.warn('Inventur-Realtime-Verbindung meldete einen Fehler.', error);
     });
 
     return () => {
-      handlers.forEach(([event, handler]) => socket?.off(event, handler));
-      socket?.disconnect();
+      subscriptions.forEach(unsubscribe => unsubscribe());
+      unsubscribeError();
     };
-  }, [pushEvent]);
+  }, [client, pushEvent]);
 
   const value = useMemo(() => ({ events, pushEvent }), [events, pushEvent]);
 
