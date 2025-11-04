@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   Prisma,
   ReportExport,
@@ -54,6 +59,7 @@ const TYPE_LABELS: Record<ReportExportType, string> = {
 @Injectable()
 export class ReportExportService {
   private readonly logger = new Logger(ReportExportService.name);
+  private hasLoggedMissingTable = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,6 +68,7 @@ export class ReportExportService {
   ) {}
 
   async enqueue(dto: ReportExportRequestDto): Promise<ExportSummary> {
+    await this.ensureReportExportTableOrThrow();
     const filters = this.normaliseFilters(dto);
     const type = dto.type as ReportExportType;
     const format = dto.format as ReportExportFormat;
@@ -71,6 +78,9 @@ export class ReportExportService {
   }
 
   async listExports(query: ReportExportListQueryDto): Promise<ExportSummary[]> {
+    if (!(await this.hasReportExportTable())) {
+      return [];
+    }
     const where: Prisma.ReportExportWhereInput = {};
 
     if (query.type) {
@@ -101,6 +111,7 @@ export class ReportExportService {
   }
 
   async getExportOrThrow(id: number) {
+    await this.ensureReportExportTableOrThrow();
     const record = await this.prisma.reportExport.findUnique({ where: { id } });
     if (!record) {
       throw new NotFoundException(`Report export ${id} not found`);
@@ -110,6 +121,9 @@ export class ReportExportService {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async scheduleDailyExports() {
+    if (!(await this.hasReportExportTable())) {
+      return;
+    }
     const now = new Date();
     const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const filters: ReportExportFilters = {
@@ -131,6 +145,9 @@ export class ReportExportService {
   }
 
   async processPendingExports(limit = 3) {
+    if (!(await this.hasReportExportTable())) {
+      return;
+    }
     const pending = await this.prisma.reportExport.findMany({
       where: { status: ReportExportStatus.PENDING },
       orderBy: { createdAt: 'asc' },
@@ -440,5 +457,45 @@ export class ReportExportService {
         'Umsatzanteil (%)': Number(row.shareOfRevenue.toFixed(2)),
       })),
     };
+  }
+
+  private async ensureReportExportTableOrThrow() {
+    if (await this.hasReportExportTable()) {
+      return;
+    }
+
+    throw new ServiceUnavailableException(
+      'Report exports are not available because the database schema is out of date. Please run the latest Prisma migrations.',
+    );
+  }
+
+  private async hasReportExportTable(): Promise<boolean> {
+    try {
+      const result = await this.prisma.$queryRaw<{ exists: boolean }[]>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND lower(table_name) = 'reportexport'
+        ) as "exists";
+      `;
+
+      const exists = Boolean(result?.[0]?.exists);
+
+      if (!exists && !this.hasLoggedMissingTable) {
+        this.logger.warn(
+          'Report export table is missing. Run "prisma migrate deploy" to apply the latest migrations.',
+        );
+        this.hasLoggedMissingTable = true;
+      } else if (exists) {
+        this.hasLoggedMissingTable = false;
+      }
+
+      return exists;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to verify report export table presence: ${detail}`);
+      return false;
+    }
   }
 }
