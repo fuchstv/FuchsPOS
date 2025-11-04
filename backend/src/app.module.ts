@@ -16,6 +16,7 @@ import { ReportingModule } from './reporting/reporting.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -37,5 +38,6 @@ import { IntegrationsModule } from './integrations/integrations.module';
     AccessControlModule,
     IntegrationsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}
