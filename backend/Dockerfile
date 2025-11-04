@@ -6,8 +6,8 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
 COPY prisma ./prisma
+RUN npm install
 RUN npm run prisma:generate
 COPY . .
 RUN npm run build
