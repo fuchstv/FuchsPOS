@@ -1,6 +1,5 @@
 generator client {
   provider      = "prisma-client-js"
-  /// Ensure Prisma generates engines compatible with Debian OpenSSL 3.0 runtimes
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
