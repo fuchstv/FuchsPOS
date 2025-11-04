@@ -199,8 +199,18 @@ export class RealtimeClient {
 
 export function buildRealtimeUrl(namespace: string) {
   const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
-  const httpBase = apiUrl.replace(/\/?api$/, '');
-  const { protocol, host } = new URL(httpBase);
-  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProtocol}//${host}/ws/${namespace}`;
+
+  let resolved: URL;
+  if (apiUrl.startsWith('http')) {
+    resolved = new URL(apiUrl);
+  } else {
+    const fallbackBase = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    resolved = new URL(apiUrl, fallbackBase);
+  }
+
+  const pathname = resolved.pathname.replace(/\/?api$/, '');
+  const normalisedPath = pathname === '/' ? '' : pathname.replace(/\/$/, '');
+  const wsProtocol = resolved.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  return `${wsProtocol}//${resolved.host}${normalisedPath}/ws/${namespace}`;
 }
