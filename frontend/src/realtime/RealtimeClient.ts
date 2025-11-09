@@ -2,8 +2,17 @@ type Listener = (payload?: any) => void;
 
 type ListenerMap = Map<string, Set<Listener>>;
 
+/**
+ * Represents the possible connection statuses of the `RealtimeClient`.
+ */
 export type RealtimeConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
+/**
+ * A WebSocket client for handling real-time communication.
+ *
+ * This class provides a simple event-based interface for a WebSocket connection,
+ * with automatic reconnection logic using exponential backoff.
+ */
 export class RealtimeClient {
   private ws: WebSocket | null = null;
   private readonly listeners: ListenerMap = new Map();
@@ -15,6 +24,12 @@ export class RealtimeClient {
   private readonly baseDelay: number;
   private readonly maxDelay: number;
 
+  /**
+   * @param url - The WebSocket URL to connect to.
+   * @param options - Configuration options for reconnection delays.
+   * @param {number} [options.baseDelay=2000] - The base delay for reconnection attempts in milliseconds.
+   * @param {number} [options.maxDelay=30000] - The maximum delay for reconnection attempts in milliseconds.
+   */
   constructor(private readonly url: string, options?: { baseDelay?: number; maxDelay?: number }) {
     this.baseDelay = options?.baseDelay ?? 2000;
     this.maxDelay = options?.maxDelay ?? 30000;
@@ -24,10 +39,20 @@ export class RealtimeClient {
     }
   }
 
+  /**
+   * Gets the current connection status.
+   * @returns {RealtimeConnectionStatus} The current status.
+   */
   getStatus(): RealtimeConnectionStatus {
     return this.status;
   }
 
+  /**
+   * Registers an event listener.
+   * @param event - The name of the event to listen for.
+   * @param listener - The callback function to execute.
+   * @returns A function to unsubscribe the listener.
+   */
   on(event: string, listener: Listener): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
@@ -38,6 +63,11 @@ export class RealtimeClient {
     return () => this.off(event, listener);
   }
 
+  /**
+   * Unregisters an event listener.
+   * @param event - The name of the event.
+   * @param listener - The callback function to remove.
+   */
   off(event: string, listener: Listener) {
     const bucket = this.listeners.get(event);
     if (!bucket) {
@@ -49,6 +79,9 @@ export class RealtimeClient {
     }
   }
 
+  /**
+   * Manually triggers a reconnection attempt.
+   */
   reconnect() {
     this.closed = false;
     this.reconnectAttempts = 0;
@@ -64,6 +97,9 @@ export class RealtimeClient {
     }
   }
 
+  /**
+   * Closes the WebSocket connection permanently.
+   */
   close() {
     this.closed = true;
     if (this.reconnectTimer) {
@@ -86,6 +122,10 @@ export class RealtimeClient {
     this.ws = null;
   }
 
+  /**
+   * Initiates a connection to the WebSocket server.
+   * @private
+   */
   private connect() {
     if (this.closed || typeof window === 'undefined') {
       return;
@@ -147,6 +187,10 @@ export class RealtimeClient {
     }
   }
 
+  /**
+   * Schedules the next reconnection attempt with exponential backoff.
+   * @private
+   */
   private scheduleReconnect() {
     if (this.closed || typeof window === 'undefined') {
       return;
@@ -161,6 +205,12 @@ export class RealtimeClient {
     this.reconnectTimer = window.setTimeout(() => this.connect(), delay + Math.floor(Math.random() * 500));
   }
 
+  /**
+   * Emits an event to all registered listeners.
+   * @param event - The name of the event.
+   * @param payload - The data to pass to the listeners.
+   * @private
+   */
   private emit(event: string, payload?: unknown) {
     const bucket = this.listeners.get(event);
     if (!bucket) {
@@ -175,6 +225,12 @@ export class RealtimeClient {
     });
   }
 
+  /**
+   * Extracts a string from various possible WebSocket message data types.
+   * @param data - The data received from the WebSocket message event.
+   * @returns The extracted string, or null if the data type is unsupported.
+   * @private
+   */
   private extractData(data: any): string | null {
     if (typeof data === 'string') {
       return data;
@@ -197,6 +253,11 @@ export class RealtimeClient {
   }
 }
 
+/**
+ * Constructs a WebSocket URL from a base API URL and a namespace.
+ * @param namespace - The namespace for the WebSocket endpoint (e.g., 'pos').
+ * @returns The full WebSocket URL.
+ */
 export function buildRealtimeUrl(namespace: string) {
   const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 

@@ -19,6 +19,11 @@ const currencyFormatter = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 4,
 });
 
+/**
+ * Detects the BNN import format based on a file's extension.
+ * @param {string} fileName - The name of the file.
+ * @returns {BnnImportFormat} The detected format.
+ */
 function detectFormat(fileName: string): BnnImportFormat {
   const extension = fileName.split('.').pop()?.toLowerCase();
   if (extension === 'json') return 'json';
@@ -26,6 +31,12 @@ function detectFormat(fileName: string): BnnImportFormat {
   return 'csv';
 }
 
+/**
+ * Normalizes and formats a decimal string for display.
+ * @param {string | null | undefined} value - The decimal string to format.
+ * @param {number} [fractionDigits=3] - The number of fraction digits to display.
+ * @returns {string} The formatted number string.
+ */
 function normalizeDecimal(value: string | null | undefined, fractionDigits = 3) {
   if (!value) return '—';
   const parsed = Number(value);
@@ -38,6 +49,12 @@ function normalizeDecimal(value: string | null | undefined, fractionDigits = 3) 
   }).format(parsed);
 }
 
+/**
+ * A component that renders the items of a goods receipt in a table.
+ * @param {object} props - The component props.
+ * @param {GoodsReceiptItem[]} props.items - The items to display.
+ * @returns {JSX.Element} The rendered table or a placeholder message.
+ */
 function GoodsReceiptTable({ items }: { items: GoodsReceiptItem[] }) {
   if (!items.length) {
     return (
@@ -87,6 +104,13 @@ function GoodsReceiptTable({ items }: { items: GoodsReceiptItem[] }) {
   );
 }
 
+/**
+ * A component for importing goods receipts from BNN (Bundesverband Naturkost Naturwaren) documents.
+ * It provides a form with a drag-and-drop area for file uploads and fields for metadata.
+ * After a successful import, it displays a summary and a detailed table of the imported items.
+ *
+ * @returns {JSX.Element} The rendered component.
+ */
 export default function GoodsReceiptImport() {
   const { pushEvent } = useInventoryRealtime();
   const fileInputRef = useRef<HTMLInputElement | null>(null);

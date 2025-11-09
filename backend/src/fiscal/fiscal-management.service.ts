@@ -4,6 +4,9 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CashRegisterInfo, FiscalContext, TenantInfo, TssInfo } from './types';
 
+/**
+ * Service for managing fiscalization entities like tenants, TSS, and cash registers.
+ */
 @Injectable()
 export class FiscalManagementService {
   private readonly logger = new Logger(FiscalManagementService.name);
@@ -13,6 +16,10 @@ export class FiscalManagementService {
     private readonly config: ConfigService,
   ) {}
 
+  /**
+   * Lists all tenants with their associated cash registers and TSSes.
+   * @returns A promise that resolves to a list of tenants.
+   */
   async listTenants() {
     return this.prisma.tenant.findMany({
       include: {
@@ -23,6 +30,11 @@ export class FiscalManagementService {
     });
   }
 
+  /**
+   * Creates or updates a tenant.
+   * @param data - The data for creating or updating the tenant.
+   * @returns A promise that resolves to the created or updated tenant.
+   */
   async upsertTenant(data: Prisma.TenantCreateInput & { id?: string }) {
     if (data.id) {
       return this.prisma.tenant.update({
@@ -34,6 +46,10 @@ export class FiscalManagementService {
     return this.prisma.tenant.create({ data });
   }
 
+  /**
+   * Sets a tenant as the default.
+   * @param id - The ID of the tenant to set as default.
+   */
   async setDefaultTenant(id: string) {
     await this.prisma.$transaction([
       this.prisma.tenant.updateMany({ data: { isDefault: false } }),
@@ -41,6 +57,11 @@ export class FiscalManagementService {
     ]);
   }
 
+  /**
+   * Creates or updates a TSS (Technical Security System).
+   * @param data - The data for creating or updating the TSS.
+   * @returns A promise that resolves to the created or updated TSS.
+   */
   async upsertTss(data: Prisma.TssCreateInput & { id: string }) {
     return this.prisma.tss.upsert({
       where: { id: data.id },
@@ -49,6 +70,11 @@ export class FiscalManagementService {
     });
   }
 
+  /**
+   * Creates or updates a cash register.
+   * @param data - The data for creating or updating the cash register.
+   * @returns A promise that resolves to the created or updated cash register.
+   */
   async upsertCashRegister(data: Prisma.CashRegisterCreateInput & { id: string }) {
     const created = await this.prisma.cashRegister.upsert({
       where: { id: data.id },
@@ -60,6 +86,10 @@ export class FiscalManagementService {
     return created;
   }
 
+  /**
+   * Sets a cash register as the default for its tenant.
+   * @param id - The ID of the cash register to set as default.
+   */
   async setDefaultCashRegister(id: string) {
     const register = await this.prisma.cashRegister.findUnique({
       where: { id },
@@ -79,6 +109,14 @@ export class FiscalManagementService {
     ]);
   }
 
+  /**
+   * Gets the active fiscal context (tenant, TSS, cash register).
+   *
+   * It first tries to find the default tenant and cash register from the database.
+   * If not found, it falls back to loading the context from environment variables.
+   *
+   * @returns A promise that resolves to the active fiscal context, or null if none is found.
+   */
   async getActiveContext(): Promise<FiscalContext | null> {
     const tenant = await this.prisma.tenant.findFirst({
       where: { isDefault: true },
@@ -112,6 +150,11 @@ export class FiscalManagementService {
     return this.loadContextFromEnv();
   }
 
+  /**
+   * Maps a Prisma tenant object to a TenantInfo object.
+   * @param tenant - The Prisma tenant object.
+   * @returns The mapped TenantInfo object.
+   */
   private mapTenant(
     tenant: Prisma.TenantGetPayload<{ include: { cashRegisters: true; tsses: true } }>,
   ): TenantInfo {
@@ -124,6 +167,11 @@ export class FiscalManagementService {
     };
   }
 
+  /**
+   * Maps a Prisma cash register object to a CashRegisterInfo object.
+   * @param register - The Prisma cash register object.
+   * @returns The mapped CashRegisterInfo object.
+   */
   private mapCashRegister(
     register: Prisma.CashRegisterGetPayload<{ include: { tss: true } }>,
   ): CashRegisterInfo {
@@ -133,6 +181,11 @@ export class FiscalManagementService {
     };
   }
 
+  /**
+   * Maps a Prisma TSS object to a TssInfo object.
+   * @param tss - The Prisma TSS object.
+   * @returns The mapped TssInfo object.
+   */
   private mapTss(tss: Prisma.TssGetPayload<{ include?: { cashRegisters?: true } }>): TssInfo {
     return {
       id: tss.id,
@@ -142,6 +195,10 @@ export class FiscalManagementService {
     };
   }
 
+  /**
+   * Loads the fiscal context from environment variables.
+   * @returns The fiscal context, or null if the required environment variables are not set.
+   */
   private loadContextFromEnv(): FiscalContext | null {
     const apiKey = this.config.get<string>('FISKALY_API_KEY');
     const apiSecret = this.config.get<string>('FISKALY_API_SECRET');

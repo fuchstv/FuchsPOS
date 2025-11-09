@@ -16,6 +16,13 @@ import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 const LATEST_SALE_TTL_SECONDS = 60 * 5;
 const CART_TTL_SECONDS = 60 * 60;
 
+/**
+ * Service for handling Point of Sale (POS) operations.
+ *
+ * This service is responsible for processing payments, managing shopping carts,
+ * sending receipts, and interacting with various other services like hardware,
+ * fiscalization, and real-time updates.
+ */
 @Injectable()
 export class PosService {
   constructor(
@@ -28,6 +35,13 @@ export class PosService {
     private readonly realtime: PosRealtimeGateway,
   ) {}
 
+  /**
+   * Synchronizes the state of a shopping cart with the server.
+   * The cart data is cached in Redis.
+   *
+   * @param dto - The data transfer object containing the cart state.
+   * @returns A confirmation message and the synchronized cart data.
+   */
   async syncCart(dto: SyncCartDto) {
     const payload = {
       ...dto,
@@ -42,6 +56,13 @@ export class PosService {
     };
   }
 
+  /**
+   * Simulates a payment transaction without performing actual fiscalization or hardware interactions.
+   * The simulated sale is temporarily cached in Redis.
+   *
+   * @param dto - The data transfer object for the payment.
+   * @returns A confirmation message and the simulated sale payload.
+   */
   async simulatePayment(dto: CreatePaymentDto) {
     const sale = await this.createSaleEntity(dto);
     const payload = await this.buildSalePayload(sale);
@@ -53,6 +74,14 @@ export class PosService {
     };
   }
 
+  /**
+   * Processes a complete payment transaction.
+   * This includes fiscalization, creating a sale record, printing a receipt,
+   * sending an email receipt (if applicable), and broadcasting real-time updates.
+   *
+   * @param dto - The data transfer object for the payment.
+   * @returns A confirmation message and the completed sale payload.
+   */
   async processPayment(dto: CreatePaymentDto) {
     try {
       const total = Number(this.calculateTotal(dto).toFixed(2));
@@ -100,6 +129,12 @@ export class PosService {
     }
   }
 
+  /**
+   * Sends an email receipt for a previously completed sale.
+   *
+   * @param dto - The data transfer object containing the sale ID and recipient email.
+   * @returns A confirmation message and the sale payload.
+   */
   async sendReceiptEmail(dto: EmailReceiptDto) {
     const sale = await this.prisma.sale.findUnique({ where: { id: dto.saleId } });
     if (!sale) {
@@ -117,14 +152,29 @@ export class PosService {
     };
   }
 
+  /**
+   * Lists all active pre-orders.
+   * @returns A promise that resolves to an array of active pre-orders.
+   */
   async listPreorders() {
     return this.preorders.listActivePreorders();
   }
 
+  /**
+   * Lists recent cash events.
+   * @param limit - The maximum number of events to return.
+   * @returns A promise that resolves to an array of cash events.
+   */
   async listCashEvents(limit = 25) {
     return this.preorders.listRecentCashEvents(limit);
   }
 
+  /**
+   * Creates a new sale entity in the database.
+   * @param dto - The payment data.
+   * @param options - Optional parameters like receipt number, total, and fiscalization data.
+   * @returns A promise that resolves to the created sale model.
+   */
   private async createSaleEntity(
     dto: CreatePaymentDto,
     options?: { receiptNo?: string; total?: number; fiscalization?: FiscalMetadataPayload | undefined },
@@ -146,6 +196,11 @@ export class PosService {
     });
   }
 
+  /**
+   * Builds the full sale payload, including augmentations from the pre-orders service.
+   * @param sale - The sale model from the database.
+   * @returns A promise that resolves to the full sale payload.
+   */
   private async buildSalePayload(sale: SaleModel): Promise<SalePayload> {
     const augmentation = await this.preorders.buildSaleAugmentation(sale.id);
     const base = this.toBaseSalePayload(sale);
@@ -158,6 +213,11 @@ export class PosService {
     };
   }
 
+  /**
+   * Converts a sale model from the database to a base SalePayload object.
+   * @param sale - The sale model.
+   * @returns The base sale payload.
+   */
   private toBaseSalePayload(sale: SaleModel): SalePayload {
     const items = (sale.items as SalePayload['items']) ?? [];
 
@@ -177,14 +237,27 @@ export class PosService {
     };
   }
 
+  /**
+   * Calculates the total amount for a given set of sale items.
+   * @param dto - The payment data containing the items.
+   * @returns The calculated total.
+   */
   private calculateTotal(dto: CreatePaymentDto) {
     return dto.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   }
 
+  /**
+   * Generates a new receipt number.
+   * @returns A unique receipt number string.
+   */
   private generateReceiptNumber() {
     return `R-${Date.now()}`;
   }
 
+  /**
+   * Clears the cached shopping cart for a given terminal.
+   * @param terminalId - The ID of the terminal.
+   */
   private async clearCachedCart(terminalId: string) {
     await this.redis.getClient().del(`pos:cart:${terminalId}`);
   }

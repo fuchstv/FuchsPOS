@@ -1,34 +1,66 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePosRealtime } from '../../realtime/PosRealtimeContext';
 
+/**
+ * Defines the possible types for inventory-related real-time events.
+ */
 export type InventoryRealtimeEventType =
   | 'goods-receipt'
   | 'count-created'
   | 'count-finalized'
   | 'price-change';
 
+/**
+ * Represents a single real-time event related to inventory management.
+ */
 export interface InventoryRealtimeEvent {
+  /** A unique identifier for the event. */
   id: string;
+  /** The type of the event. */
   type: InventoryRealtimeEventType;
+  /** A human-readable title for the event. */
   title: string;
+  /** The ISO 8601 timestamp of when the event occurred. */
   timestamp: string;
+  /** An optional description providing more details about the event. */
   description?: string;
+  /** An optional payload containing additional data related to the event. */
   payload?: unknown;
 }
 
+/**
+ * Defines the shape of the context value for inventory real-time updates.
+ */
 interface InventoryRealtimeContextValue {
+  /** A list of the most recent inventory events. */
   events: InventoryRealtimeEvent[];
+  /** A function to add a new event to the list. */
   pushEvent: (event: InventoryRealtimeEvent) => void;
 }
 
+/**
+ * React context for providing real-time inventory event data.
+ */
 const InventoryRealtimeContext = createContext<InventoryRealtimeContextValue | undefined>(undefined);
 
 const MAX_EVENTS = 40;
 
+/**
+ * Generates a unique ID for an inventory event.
+ * @param {InventoryRealtimeEventType} type - The type of the event.
+ * @returns {string} A unique event ID.
+ */
 function buildEventId(type: InventoryRealtimeEventType) {
   return `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Provides a context for real-time inventory updates to its children.
+ * It listens for WebSocket events and updates the event list.
+ * @param {{ children: React.ReactNode }} props - The component props.
+ * @param {React.ReactNode} props.children - The child components to render.
+ * @returns {JSX.Element} The provider component.
+ */
 export function InventoryRealtimeProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<InventoryRealtimeEvent[]>([]);
   const { client } = usePosRealtime();
@@ -116,6 +148,12 @@ export function InventoryRealtimeProvider({ children }: { children: React.ReactN
   return <InventoryRealtimeContext.Provider value={value}>{children}</InventoryRealtimeContext.Provider>;
 }
 
+/**
+ * Custom hook for accessing the inventory real-time context.
+ * This must be used within a component that is a descendant of `InventoryRealtimeProvider`.
+ * @returns {InventoryRealtimeContextValue} The inventory real-time context value.
+ * @throws {Error} If used outside of an `InventoryRealtimeProvider`.
+ */
 export function useInventoryRealtime() {
   const context = useContext(InventoryRealtimeContext);
   if (!context) {

@@ -21,6 +21,9 @@ import { ReportExportListQueryDto, ReportExportRequestDto } from './dto/report-e
 import { Granularity } from './dto/date-range.dto';
 import { ReportingService } from './reporting.service';
 
+/**
+ * Defines the filters for a report export.
+ */
 type ReportExportFilters = {
   startDate?: string;
   endDate?: string;
@@ -28,12 +31,18 @@ type ReportExportFilters = {
   locationId?: string;
 };
 
+/**
+ * Represents a dataset to be exported, including headers and rows.
+ */
 type Dataset = {
   name: string;
   headers: string[];
   rows: Record<string, string | number | null>[];
 };
 
+/**
+ * Represents a summary of a report export, including its status and metadata.
+ */
 type ExportSummary = {
   id: number;
   type: ReportExportType;
@@ -56,6 +65,12 @@ const TYPE_LABELS: Record<ReportExportType, string> = {
   CATEGORY_PERFORMANCE: 'category-performance',
 };
 
+/**
+ * Service for managing the creation, queuing, and processing of report exports.
+ *
+ * This service handles requests to export reports in various formats (CSV, Excel),
+ * manages a queue of pending exports, and processes them asynchronously.
+ */
 @Injectable()
 export class ReportExportService {
   private readonly logger = new Logger(ReportExportService.name);
@@ -67,6 +82,12 @@ export class ReportExportService {
     private readonly mailer: MailerService,
   ) {}
 
+  /**
+   * Enqueues a new report export request.
+   * If a similar export already exists, it may be reused or re-queued.
+   * @param dto - The request data for the export.
+   * @returns A promise that resolves to a summary of the enqueued export.
+   */
   async enqueue(dto: ReportExportRequestDto): Promise<ExportSummary> {
     await this.ensureReportExportTableOrThrow();
     const filters = this.normaliseFilters(dto);
@@ -77,6 +98,11 @@ export class ReportExportService {
     return this.toSummary(record);
   }
 
+  /**
+   * Lists existing report exports based on query filters.
+   * @param query - The filtering criteria.
+   * @returns A promise that resolves to an array of export summaries.
+   */
   async listExports(query: ReportExportListQueryDto): Promise<ExportSummary[]> {
     if (!(await this.hasReportExportTable())) {
       return [];
@@ -110,6 +136,12 @@ export class ReportExportService {
     return exports.map((record) => this.toSummary(record));
   }
 
+  /**
+   * Retrieves a single report export by its ID.
+   * @param id - The ID of the export.
+   * @returns A promise that resolves to the export record.
+   * @throws NotFoundException if the export does not exist.
+   */
   async getExportOrThrow(id: number) {
     await this.ensureReportExportTableOrThrow();
     const record = await this.prisma.reportExport.findUnique({ where: { id } });
@@ -119,6 +151,10 @@ export class ReportExportService {
     return record;
   }
 
+  /**
+   * A scheduled job that enqueues daily exports for all report types and formats.
+   * Runs every day at 3 AM.
+   */
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async scheduleDailyExports() {
     if (!(await this.hasReportExportTable())) {
@@ -139,11 +175,19 @@ export class ReportExportService {
     }
   }
 
+  /**
+   * A scheduled job that triggers the processing of the export queue.
+   * Runs every minute.
+   */
   @Cron(CronExpression.EVERY_MINUTE)
   async processQueue() {
     await this.processPendingExports();
   }
 
+  /**
+   * Processes a batch of pending report exports from the queue.
+   * @param limit - The maximum number of exports to process in this batch.
+   */
   async processPendingExports(limit = 3) {
     if (!(await this.hasReportExportTable())) {
       return;
@@ -177,6 +221,15 @@ export class ReportExportService {
     }
   }
 
+  /**
+   * Ensures an export record exists, creating or updating it as needed.
+   * This is used to avoid duplicate exports for the same parameters.
+   * @param type - The type of report.
+   * @param format - The export format.
+   * @param filters - The report filters.
+   * @param notificationEmail - The email address for notifications.
+   * @returns A promise that resolves to the created or updated export record.
+   */
   private async ensureExport(
     type: ReportExportType,
     format: ReportExportFormat,
@@ -224,6 +277,10 @@ export class ReportExportService {
     });
   }
 
+  /**
+   * Generates the actual report file for a given export ID.
+   * @param exportId - The ID of the export to generate.
+   */
   private async generateExport(exportId: number) {
     const record = await this.prisma.reportExport.findUnique({ where: { id: exportId } });
     if (!record) {
@@ -290,6 +347,11 @@ export class ReportExportService {
     this.logger.log(`Export ${record.id} completed (${updated.format})`);
   }
 
+  /**
+   * Normalizes the filters from a request DTO into a consistent object.
+   * @param query - The request DTO.
+   * @returns The normalized filters object.
+   */
   private normaliseFilters(query: ReportExportRequestDto): ReportExportFilters {
     return {
       startDate: query.startDate ? query.startDate.toISOString() : undefined,
@@ -299,6 +361,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Parses the filters from the JSON field in the database.
+   * @param filters - The JSON value from the database.
+   * @returns The parsed filters object.
+   */
   private parseFilters(filters: Prisma.JsonValue | null | undefined): ReportExportFilters {
     if (!filters || typeof filters !== 'object') {
       return {};
@@ -312,6 +379,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Converts a filters object into a query object for the ReportingService.
+   * @param filters - The filters object.
+   * @returns The query object.
+   */
   private toQuery(filters: ReportExportFilters) {
     return {
       startDate: filters.startDate ? new Date(filters.startDate) : undefined,
@@ -321,6 +393,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Converts a full export record from the database into a summary object.
+   * @param record - The database record.
+   * @returns The export summary.
+   */
   private toSummary(record: ReportExport): ExportSummary {
     const filters = this.parseFilters(record.filters);
     return {
@@ -340,6 +417,13 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Builds a unique fingerprint for a set of export parameters.
+   * @param type - The report type.
+   * @param format - The export format.
+   * @param filters - The report filters.
+   * @returns A SHA1 hash representing the parameters.
+   */
   private buildFingerprint(
     type: ReportExportType,
     format: ReportExportFormat,
@@ -349,6 +433,11 @@ export class ReportExportService {
     return createHash('sha1').update(payload).digest('hex');
   }
 
+  /**
+   * Constructs a file name for an export.
+   * @param record - The export record.
+   * @returns The generated file name.
+   */
   private buildFileName(record: ReportExport) {
     const base = TYPE_LABELS[record.type] ?? 'report';
     const start = record.fromDate ? this.formatDateForFile(record.fromDate) : 'start';
@@ -357,6 +446,11 @@ export class ReportExportService {
     return `${base}_${start}_${end}.${extension}`;
   }
 
+  /**
+   * Formats a date for use in a file name (YYYYMMDD).
+   * @param date - The date to format.
+   * @returns The formatted date string.
+   */
   private formatDateForFile(date: Date) {
     const year = date.getUTCFullYear();
     const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
@@ -364,6 +458,12 @@ export class ReportExportService {
     return `${year}${month}${day}`;
   }
 
+  /**
+   * Renders a dataset into a CSV file buffer.
+   * @param dataset - The dataset to render.
+   * @param fileName - The desired file name.
+   * @returns An object containing the file name, MIME type, and content buffer.
+   */
   private renderCsv(dataset: Dataset, fileName: string) {
     const delimiter = ';';
     const escape = (value: string | number | null) => {
@@ -389,6 +489,12 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Renders a dataset into an Excel (XLSX) file buffer.
+   * @param dataset - The dataset to render.
+   * @param fileName - The desired file name.
+   * @returns A promise that resolves to an object containing the file name, MIME type, and content buffer.
+   */
   private async renderExcel(dataset: Dataset, fileName: string) {
     const workbook = new Workbook();
     const sheet = workbook.addWorksheet(dataset.name);
@@ -406,6 +512,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Converts sales summary data into a standardized dataset format for export.
+   * @param data - The sales summary data.
+   * @returns The formatted dataset.
+   */
   private buildSalesDataset(
     data: Array<{
       period: string;
@@ -428,6 +539,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Converts employee performance data into a standardized dataset format for export.
+   * @param data - The employee performance data.
+   * @returns The formatted dataset.
+   */
   private buildEmployeeDataset(
     data: Array<{ employeeId: string; revenue: number; tickets: number; avgBasket: number }>,
   ): Dataset {
@@ -443,6 +559,11 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Converts category performance data into a standardized dataset format for export.
+   * @param data - The category performance data.
+   * @returns The formatted dataset.
+   */
   private buildCategoryDataset(
     data: Array<{ category: string; revenue: number; units: number; items: number; shareOfRevenue: number }>,
   ): Dataset {
@@ -459,6 +580,9 @@ export class ReportExportService {
     };
   }
 
+  /**
+   * Checks if the `ReportExport` table exists in the database and throws an error if it doesn't.
+   */
   private async ensureReportExportTableOrThrow() {
     if (await this.hasReportExportTable()) {
       return;
@@ -469,6 +593,10 @@ export class ReportExportService {
     );
   }
 
+  /**
+   * Checks if the `ReportExport` table exists in the database.
+   * @returns A promise that resolves to true if the table exists, false otherwise.
+   */
   private async hasReportExportTable(): Promise<boolean> {
     try {
       const result = await this.prisma.$queryRaw<{ exists: boolean }[]>`

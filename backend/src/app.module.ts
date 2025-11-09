@@ -18,6 +18,12 @@ import { AccessControlModule } from './access-control/access-control.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { AppController } from './app.controller';
 
+/**
+ * The main application module.
+ *
+ * This module imports all other modules required for the application to run.
+ * It also configures global modules like `ConfigModule` and `ScheduleModule`.
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),

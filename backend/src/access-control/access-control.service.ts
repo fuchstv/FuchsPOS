@@ -15,10 +15,20 @@ type AuditContext = {
   metadata?: Prisma.InputJsonValue;
 };
 
+/**
+ * Service for handling access control logic.
+ *
+ * This service manages users, roles, permissions, and audit logs.
+ * It interacts with the PrismaService to perform database operations.
+ */
 @Injectable()
 export class AccessControlService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Lists all users with their assigned roles.
+   * @returns A promise that resolves to a list of users.
+   */
   async listUsers() {
     return this.prisma.user.findMany({
       include: {
@@ -30,6 +40,10 @@ export class AccessControlService {
     });
   }
 
+  /**
+   * Lists all roles with their assigned permissions.
+   * @returns A promise that resolves to a list of roles.
+   */
   async listRoles() {
     return this.prisma.role.findMany({
       include: {
@@ -41,6 +55,11 @@ export class AccessControlService {
     });
   }
 
+  /**
+   * Lists audit logs.
+   * @param limit - The maximum number of audit logs to return.
+   * @returns A promise that resolves to a list of audit logs.
+   */
   async listAuditLogs(limit = 100) {
     return this.prisma.auditLog.findMany({
       take: limit,
@@ -48,6 +67,12 @@ export class AccessControlService {
     });
   }
 
+  /**
+   * Creates a new user.
+   * @param dto - The data for creating the user.
+   * @param actor - The context of the user performing the action.
+   * @returns A promise that resolves to the newly created user.
+   */
   async createUser(dto: CreateUserDto, actor?: AuditContext) {
     const hashed = this.hashPassword(dto.password);
     const user = await this.prisma.user.create({
@@ -72,6 +97,12 @@ export class AccessControlService {
     return user;
   }
 
+  /**
+   * Updates the status of a user (active/inactive).
+   * @param dto - The data for updating the user's status.
+   * @param actor - The context of the user performing the action.
+   * @returns A promise that resolves to the updated user.
+   */
   async updateUserStatus(dto: UpdateUserStatusDto, actor?: AuditContext) {
     const user = await this.prisma.user.update({
       where: { id: dto.userId },
@@ -91,6 +122,12 @@ export class AccessControlService {
     return user;
   }
 
+  /**
+   * Creates a new role.
+   * @param dto - The data for creating the role.
+   * @param actor - The context of the user performing the action.
+   * @returns A promise that resolves to the newly created role.
+   */
   async createRole(dto: CreateRoleDto, actor?: AuditContext) {
     const existingPermissions = await this.ensurePermissions(dto.permissions);
     const role = await this.prisma.role.create({
@@ -123,6 +160,12 @@ export class AccessControlService {
     return role;
   }
 
+  /**
+   * Assigns a role to a user.
+   * @param dto - The data for assigning the role.
+   * @param actor - The context of the user performing the action.
+   * @returns A promise that resolves to the updated user with their roles.
+   */
   async assignRole(dto: AssignRoleDto, actor?: AuditContext) {
     await this.ensureRoleExists(dto.roleId);
     await this.ensureUserExists(dto.userId);
@@ -151,6 +194,12 @@ export class AccessControlService {
     });
   }
 
+  /**
+   * Updates the permissions for a role.
+   * @param dto - The data for updating the role's permissions.
+   * @param actor - The context of the user performing the action.
+   * @returns A promise that resolves to the updated role with its permissions.
+   */
   async updateRolePermissions(dto: UpdateRolePermissionsDto, actor?: AuditContext) {
     const role = await this.prisma.role.findUnique({ where: { id: dto.roleId } });
     if (!role) {
@@ -187,6 +236,11 @@ export class AccessControlService {
     });
   }
 
+  /**
+   * Ensures that a list of permissions exist in the database, creating them if they don't.
+   * @param keys - A list of permission keys.
+   * @returns A promise that resolves to a list of permission objects.
+   */
   private async ensurePermissions(keys: string[]): Promise<Permission[]> {
     if (!keys.length) {
       return [];
@@ -215,6 +269,12 @@ export class AccessControlService {
     return permissions;
   }
 
+  /**
+   * Ensures that a role exists in the database.
+   * @param roleId - The ID of the role.
+   * @returns A promise that resolves to the role object.
+   * @throws NotFoundException if the role does not exist.
+   */
   private async ensureRoleExists(roleId: number) {
     const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) {
@@ -223,6 +283,12 @@ export class AccessControlService {
     return role;
   }
 
+  /**
+   * Ensures that a user exists in the database.
+   * @param userId - The ID of the user.
+   * @returns A promise that resolves to the user object.
+   * @throws NotFoundException if the user does not exist.
+   */
   private async ensureUserExists(userId: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -231,12 +297,21 @@ export class AccessControlService {
     return user;
   }
 
+  /**
+   * Hashes a password using a random salt.
+   * @param password - The password to hash.
+   * @returns The hashed password in the format `salt:hash`.
+   */
   private hashPassword(password: string) {
     const salt = randomBytes(8).toString('hex');
     const hash = createHash('sha256').update(password + salt).digest('hex');
     return `${salt}:${hash}`;
   }
 
+  /**
+   * Writes an entry to the audit log.
+   * @param entry - The audit log entry to write.
+   */
   private async writeAuditLog(entry: {
     action: string;
     entity?: string;

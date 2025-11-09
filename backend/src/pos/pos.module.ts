@@ -7,6 +7,12 @@ import { FiscalModule } from '../fiscal/fiscal.module';
 import { PreordersModule } from '../preorders/preorders.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 
+/**
+ * The module for Point of Sale (POS) functionality.
+ *
+ * This module integrates various other modules like Hardware, Mailer, Fiscal,
+ * Preorders, and Realtime to provide a complete POS solution.
+ */
 @Module({
   imports: [HardwareModule, MailerModule, FiscalModule, PreordersModule, RealtimeModule],
   controllers: [PosController],

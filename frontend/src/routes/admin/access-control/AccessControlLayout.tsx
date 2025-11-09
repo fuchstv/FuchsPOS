@@ -6,6 +6,15 @@ const tabs = [
   { to: '/admin/access-control/audit-log', label: 'Audit-Log' },
 ];
 
+/**
+ * Provides the layout for the access control section of the admin panel.
+ *
+ * This component includes a header with a title, a brief description,
+ * and tab-based navigation for the different access control pages (Users, Roles, Audit Log).
+ * It uses React Router's `Outlet` to render the content of the active nested route.
+ *
+ * @returns {JSX.Element} The rendered layout component.
+ */
 export default function AccessControlLayout() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">

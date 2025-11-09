@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import type { WoltOrder, WoltProduct } from './wolt.types';
 
+/**
+ * Service for interacting with a Wolt-compatible API.
+ *
+ * This service handles the communication with an external API for fetching product and order data.
+ * It is configured via environment variables and will be disabled if the required
+ * variables (WOLT_API_BASE_URL, WOLT_API_TOKEN) are not set.
+ */
 @Injectable()
 export class WoltApiService {
   private readonly logger = new Logger(WoltApiService.name);
@@ -27,6 +34,10 @@ export class WoltApiService {
     });
   }
 
+  /**
+   * Fetches the product catalog from the Wolt API.
+   * @returns A promise that resolves to an array of normalized Wolt products.
+   */
   async fetchProducts(): Promise<WoltProduct[]> {
     if (!this.http) {
       return [];
@@ -48,6 +59,11 @@ export class WoltApiService {
     }
   }
 
+  /**
+   * Fetches recent orders from the Wolt API.
+   * @param since - An optional date to fetch orders created or updated since this time.
+   * @returns A promise that resolves to an array of normalized Wolt orders.
+   */
   async fetchOrders(since?: Date): Promise<WoltOrder[]> {
     if (!this.http) {
       return [];
@@ -77,6 +93,12 @@ export class WoltApiService {
     }
   }
 
+  /**
+   * Safely extracts an array from a payload, checking multiple possible keys.
+   * @param payload - The object or array to extract from.
+   * @param candidates - An array of possible keys that might contain the target array.
+   * @returns The extracted array, or an empty array if not found.
+   */
   private extractArray(payload: any, candidates: string[]): any[] {
     if (Array.isArray(payload)) {
       return payload;

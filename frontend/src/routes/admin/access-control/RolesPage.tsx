@@ -6,6 +6,11 @@ import {
   updateRolePermissions,
 } from '../../../api/accessControl';
 
+/**
+ * Parses a comma-separated string of permissions into an array of strings.
+ * @param {string} input - The comma-separated string of permissions.
+ * @returns {string[]} An array of permission keys.
+ */
 function parsePermissions(input: string) {
   return input
     .split(',')
@@ -13,6 +18,16 @@ function parsePermissions(input: string) {
     .filter(Boolean);
 }
 
+/**
+ * A page component for managing access control roles.
+ *
+ * This component allows users to:
+ * - View a list of existing roles and their permissions.
+ * - Create new roles with a name, description, and permissions.
+ * - Update the permissions for an existing role.
+ *
+ * @returns {JSX.Element} The rendered roles management page.
+ */
 export default function RolesPage() {
   const [roles, setRoles] = useState<AccessControlRole[]>([]);
   const [loading, setLoading] = useState(true);

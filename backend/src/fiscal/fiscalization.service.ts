@@ -7,6 +7,9 @@ import type { FiscalMetadataPayload } from '../pos/types/sale-payload';
 
 const VAT_RATE = 0.07;
 
+/**
+ * Service for handling the fiscalization of receipts.
+ */
 @Injectable()
 export class FiscalizationService {
   private readonly logger = new Logger(FiscalizationService.name);
@@ -16,6 +19,14 @@ export class FiscalizationService {
     private readonly fiskaly: FiskalyClientService,
   ) {}
 
+  /**
+   * Registers a receipt with the fiscalization service (Fiskaly).
+   *
+   * @param receiptNo - The receipt number.
+   * @param dto - The payment data.
+   * @param total - The total amount of the sale.
+   * @returns A promise that resolves to the fiscal metadata, or undefined if fiscalization is not active.
+   */
   async registerReceipt(
     receiptNo: string,
     dto: CreatePaymentDto,
@@ -78,6 +89,15 @@ export class FiscalizationService {
     }
   }
 
+  /**
+   * Builds the receipt schema for the Fiskaly API.
+   *
+   * @param receiptNo - The receipt number.
+   * @param paymentMethod - The payment method.
+   * @param total - The total amount of the sale.
+   * @param items - The items included in the sale.
+   * @returns The receipt schema.
+   */
   private buildReceiptSchema(
     receiptNo: string,
     paymentMethod: string,
@@ -115,6 +135,12 @@ export class FiscalizationService {
     };
   }
 
+  /**
+   * Maps a payment method to the corresponding Fiskaly payment type.
+   *
+   * @param method - The payment method.
+   * @returns The Fiskaly payment type.
+   */
   private mapPaymentMethod(method: string) {
     switch (method) {
       case 'CASH':

@@ -9,6 +9,17 @@ import {
   updateUserStatus,
 } from '../../../api/accessControl';
 
+/**
+ * A page component for managing users in the access control system.
+ *
+ * This component provides functionality to:
+ * - View a list of all users.
+ * - Create new users with a name, email, password, and optional tenant ID.
+ * - Activate or deactivate existing users.
+ * - Assign roles to users.
+ *
+ * @returns {JSX.Element} The rendered user management page.
+ */
 export default function UsersPage() {
   const [users, setUsers] = useState<AccessControlUser[]>([]);
   const [roles, setRoles] = useState<AccessControlRole[]>([]);

@@ -10,6 +10,12 @@ const badgeTone: Record<string, string> = {
   'price-change': 'border-amber-400/60 bg-amber-500/10 text-amber-200',
 };
 
+/**
+ * Renders the inventory dashboard, which provides an overview of inventory-related activities.
+ * It includes components for importing goods receipts, managing inventory counts, and changing prices.
+ * It also displays a real-time log of inventory events.
+ * @returns {JSX.Element} The inventory dashboard component.
+ */
 export default function InventoryDashboard() {
   const { events } = useInventoryRealtime();
 

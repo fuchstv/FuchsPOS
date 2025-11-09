@@ -9,6 +9,15 @@ const currencyFormatter = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 2,
 });
 
+/**
+ * A form component for recording price changes for products.
+ *
+ * This component provides a user interface to update the price of a product,
+ * specify a reason and an effective date range, and optionally create an associated promotion.
+ * On successful submission, it displays a summary of the change.
+ *
+ * @returns {JSX.Element} The rendered component.
+ */
 export default function PriceChangeForm() {
   const { pushEvent } = useInventoryRealtime();
   const [form, setForm] = useState({
