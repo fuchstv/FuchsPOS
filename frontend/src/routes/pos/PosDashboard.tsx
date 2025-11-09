@@ -103,6 +103,11 @@ export default function PosDashboard() {
     [cashEvents],
   );
 
+  const safePreorders = useMemo(() => (Array.isArray(preorders) ? preorders : []), [preorders]);
+
+  const formatHealthValue = (value?: string | null, fallback: string = 'UNBEKANNT') =>
+    typeof value === 'string' && value.trim() ? value.toUpperCase() : fallback;
+
   const formatStatusLabel = (status: string) => {
     switch (status) {
       case 'READY':
@@ -586,13 +591,13 @@ export default function PosDashboard() {
           <section className="space-y-3 rounded-2xl border border-indigo-400/40 bg-indigo-500/10 p-4 text-xs text-indigo-100">
             <div className="flex items-center justify-between text-sm">
               <h3 className="font-semibold text-indigo-100">Vorbestellungen</h3>
-              <span className="text-xs text-indigo-200/80">{preorders.length}</span>
+              <span className="text-xs text-indigo-200/80">{safePreorders.length}</span>
             </div>
-            {preorders.length === 0 ? (
+            {safePreorders.length === 0 ? (
               <p className="text-xs text-indigo-200/80">Aktuell liegen keine offenen Vorbestellungen vor.</p>
             ) : (
               <ul className="space-y-3">
-                {preorders.map(preorder => (
+                {safePreorders.map(preorder => (
                   <li key={preorder.id} className="rounded-xl border border-indigo-300/30 bg-indigo-900/30 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -732,23 +737,34 @@ export default function PosDashboard() {
               <div className="mt-2 space-y-1">
                 <p className="mt-1">
                   Backend:{' '}
-                  <span className={health.status === 'ok' ? 'text-emerald-300' : 'text-amber-300'}>
-                    {health.status.toUpperCase()}
+                  <span className={health?.status === 'ok' ? 'text-emerald-300' : 'text-amber-300'}>
+                    {formatHealthValue(health?.status)}
                   </span>
                 </p>
                 <p>
                   Datenbank:{' '}
-                  <span className={health.dependencies.database === 'up' ? 'text-emerald-300' : 'text-rose-300'}>
-                    {health.dependencies.database.toUpperCase()}
+                  <span
+                    className={
+                      health?.dependencies?.database === 'up' ? 'text-emerald-300' : 'text-rose-300'
+                    }
+                  >
+                    {formatHealthValue(health?.dependencies?.database)}
                   </span>
                 </p>
                 <p>
                   Cache:{' '}
-                  <span className={health.dependencies.cache === 'up' ? 'text-emerald-300' : 'text-rose-300'}>
-                    {health.dependencies.cache.toUpperCase()}
+                  <span
+                    className={health?.dependencies?.cache === 'up' ? 'text-emerald-300' : 'text-rose-300'}
+                  >
+                    {formatHealthValue(health?.dependencies?.cache)}
                   </span>
                 </p>
-                <p>Stand: {new Date(health.timestamp).toLocaleTimeString('de-DE')}</p>
+                <p>
+                  Stand:{' '}
+                  {health?.timestamp
+                    ? new Date(health.timestamp).toLocaleTimeString('de-DE')
+                    : 'unbekannt'}
+                </p>
               </div>
             ) : (
               <p className="mt-2 text-rose-300">{healthError ?? 'Keine Health-Daten verfügbar.'}</p>
