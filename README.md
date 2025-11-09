@@ -24,7 +24,7 @@ This project is designed to be run with Docker Compose, which simplifies the set
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/your-username/fuchspos.git
+    git clone https://github.com/fuchstv/FuchsPOS
     cd fuchspos
     ```
 
