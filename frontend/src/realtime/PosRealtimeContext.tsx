@@ -1,25 +1,46 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { RealtimeClient, RealtimeConnectionStatus, buildRealtimeUrl } from './RealtimeClient';
 
+/**
+ * Represents a real-time event for queue metrics.
+ */
 export type QueueMetricEvent = {
+  /** The name of the queue. */
   queue: string;
+  /** The timestamp when the metrics were updated. */
   updatedAt: string;
   [key: string]: unknown;
 };
 
+/**
+ * Represents a system error event received via the real-time connection.
+ */
 export type RealtimeSystemError = {
+  /** The source of the error (e.g., 'backend', 'realtime-client'). */
   source: string;
+  /** The error message. */
   message: string;
+  /** The timestamp when the error occurred. */
   occurredAt: string;
+  /** Optional additional details about the error. */
   details?: unknown;
 };
 
+/**
+ * The value provided by the `PosRealtimeContext`.
+ */
 type PosRealtimeContextValue = {
+  /** The `RealtimeClient` instance. */
   client: RealtimeClient | null;
+  /** The current connection status. */
   status: RealtimeConnectionStatus;
+  /** Information about the last disconnection, if any. */
   lastDisconnect?: { code?: number; reason?: string; wasClean?: boolean };
+  /** An array of the latest queue metrics. */
   metrics: QueueMetricEvent[];
+  /** An array of the most recent system errors. */
   errors: RealtimeSystemError[];
+  /** A function to manually trigger a reconnection. */
   reconnect: () => void;
 };
 
@@ -30,6 +51,16 @@ const MAX_ERROR_HISTORY = 20;
 const sortMetrics = (metrics: QueueMetricEvent[]) =>
   [...metrics].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
+/**
+ * A React provider component that manages the real-time WebSocket client for POS events.
+ *
+ * It handles the lifecycle of the `RealtimeClient`, maintains the connection status,
+ * and provides access to received metrics and errors via context.
+ *
+ * @param {object} props - The component props.
+ * @param {React.ReactNode} props.children - The child components to render.
+ * @returns {JSX.Element} The provider component.
+ */
 export function PosRealtimeProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<RealtimeConnectionStatus>('connecting');
   const [metrics, setMetrics] = useState<QueueMetricEvent[]>([]);
@@ -148,6 +179,12 @@ export function PosRealtimeProvider({ children }: { children: React.ReactNode })
   return <PosRealtimeContext.Provider value={value}>{children}</PosRealtimeContext.Provider>;
 }
 
+/**
+ * A custom hook to access the `PosRealtimeContext`.
+ *
+ * @throws {Error} If used outside of a `PosRealtimeProvider`.
+ * @returns {PosRealtimeContextValue} The context value.
+ */
 export function usePosRealtime() {
   const context = useContext(PosRealtimeContext);
   if (!context) {

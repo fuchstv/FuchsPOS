@@ -17,10 +17,20 @@ const DATEV_HEADER = [
   'Buchungstext',
 ];
 
+/**
+ * Service for handling accounting-related tasks.
+ */
 @Injectable()
 export class AccountingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Generates a DATEV export of sales data.
+   *
+   * @param dto - The data transfer object containing the export options.
+   * @param actorUserId - The ID of the user triggering the export.
+   * @returns An object containing the export data.
+   */
   async generateDatevExport(dto: DatevExportDto, actorUserId?: number) {
     const where: Prisma.SaleWhereInput = {};
     if (dto.startDate || dto.endDate) {
@@ -103,6 +113,11 @@ export class AccountingService {
     };
   }
 
+  /**
+   * Formats a date as a string in the format "DD.MM.YYYY".
+   * @param date - The date to format.
+   * @returns The formatted date string.
+   */
   private formatDate(date: Date) {
     const day = `${date.getUTCDate()}`.padStart(2, '0');
     const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
@@ -110,6 +125,11 @@ export class AccountingService {
     return `${day}.${month}.${year}`;
   }
 
+  /**
+   * Resolves the DATEV tax key for a sale based on its fiscal metadata.
+   * @param sale - The sale object.
+   * @returns The DATEV tax key.
+   */
   private resolveTaxKey(sale: { fiscalMetadata: Prisma.JsonValue | null }): string {
     const meta = sale.fiscalMetadata as null | { taxRate?: number };
     if (!meta?.taxRate) {
@@ -124,6 +144,11 @@ export class AccountingService {
     return '19';
   }
 
+  /**
+   * Converts a value to a number.
+   * @param value - The value to convert.
+   * @returns The converted number.
+   */
   private asNumber(value: Prisma.Decimal | number | bigint | null): number {
     if (value === null) {
       return 0;
@@ -140,6 +165,12 @@ export class AccountingService {
     return Number(value);
   }
 
+  /**
+   * Transfers a payload to a webhook.
+   * @param webhookId - The ID of the webhook to transfer to.
+   * @param payload - The payload to transfer.
+   * @returns An object indicating whether the transfer was successful.
+   */
   private async transferToWebhook(webhookId: number, payload: unknown) {
     const webhook = await this.prisma.apiWebhook.findUnique({ where: { id: webhookId } });
     if (!webhook) {

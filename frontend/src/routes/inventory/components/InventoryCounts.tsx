@@ -15,6 +15,9 @@ const differenceFormatter = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 3,
 });
 
+/**
+ * Represents a draft of a line item for creating an inventory count.
+ */
 type CountLineDraft = {
   productSku: string;
   expectedQuantity: string;
@@ -22,6 +25,9 @@ type CountLineDraft = {
   batchLotNumber: string;
 };
 
+/**
+ * Represents a draft of a line item for finalizing an inventory count.
+ */
 type FinalizeLineDraft = {
   id?: number;
   productSku: string;
@@ -44,12 +50,22 @@ const defaultFinalizeLine: FinalizeLineDraft = {
   adjustmentReason: '',
 };
 
+/**
+ * Converts a string to a number, handling empty strings and commas.
+ * @param {string} value - The string to convert.
+ * @returns {number | undefined} The parsed number or undefined if invalid.
+ */
 function toNumber(value: string) {
   if (!value.trim()) return undefined;
   const parsed = Number(value.replace(',', '.'));
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
+/**
+ * Determines the CSS classes for a difference badge based on its value.
+ * @param {string} difference - The difference value as a string.
+ * @returns {string} Tailwind CSS classes for the badge.
+ */
 function differenceBadge(difference: string) {
   const numeric = Number(difference);
   if (Number.isNaN(numeric) || numeric === 0) {
@@ -60,6 +76,11 @@ function differenceBadge(difference: string) {
     : 'border-rose-400/50 bg-rose-500/10 text-rose-200';
 }
 
+/**
+ * Formats a difference value for display, including a sign.
+ * @param {string} difference - The difference value as a string.
+ * @returns {string} The formatted difference string.
+ */
 function differenceLabel(difference: string) {
   const numeric = Number(difference);
   if (Number.isNaN(numeric)) {
@@ -70,6 +91,12 @@ function differenceLabel(difference: string) {
   return numeric > 0 ? `+${formatted}` : formatted;
 }
 
+/**
+ * A component that displays inventory count items in a table.
+ * @param {object} props - The component props.
+ * @param {InventoryCountItem[]} props.items - The items to display.
+ * @returns {JSX.Element} The rendered table.
+ */
 function InventoryItemsTable({ items }: { items: InventoryCountItem[] }) {
   if (!items.length) {
     return (
@@ -117,6 +144,13 @@ function InventoryItemsTable({ items }: { items: InventoryCountItem[] }) {
   );
 }
 
+/**
+ * A component for creating and finalizing inventory counts.
+ * It provides two forms: one for starting a new count and another for finalizing an existing one.
+ * It displays the results of these operations, including tables of counted items and adjustments.
+ *
+ * @returns {JSX.Element} The rendered inventory counts component.
+ */
 export default function InventoryCounts() {
   const { pushEvent } = useInventoryRealtime();
   const [createForm, setCreateForm] = useState({

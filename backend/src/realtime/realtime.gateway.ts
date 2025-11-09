@@ -8,19 +8,34 @@ import type { Socket } from 'node:net';
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_ERROR_HISTORY = 20;
 
+/**
+ * Represents a real-time event for queue metrics.
+ */
 type QueueMetricEvent = {
+  /** The name of the queue. */
   queue: string;
+  /** The timestamp when the metrics were updated. */
   updatedAt: string;
   [key: string]: unknown;
 };
 
+/**
+ * Represents a real-time event for a system error.
+ */
 type SystemErrorEvent = {
+  /** The source or component where the error occurred. */
   source: string;
+  /** The error message. */
   message: string;
+  /** The timestamp when the error occurred. */
   occurredAt: string;
+  /** Optional additional details about the error. */
   details?: unknown;
 };
 
+/**
+ * Manages a single WebSocket connection, including framing, pings, and lifecycle.
+ */
 class RealtimeConnection {
   private readonly logger: Logger;
   private readonly onClose: (connection: RealtimeConnection) => void;
@@ -28,6 +43,11 @@ class RealtimeConnection {
   private closed = false;
   private readonly pingInterval: NodeJS.Timeout;
 
+  /**
+   * @param socket The underlying TCP socket for the connection.
+   * @param logger The logger instance.
+   * @param onClose A callback function to be executed when the connection is closed.
+   */
   constructor(private readonly socket: Socket, logger: Logger, onClose: (connection: RealtimeConnection) => void) {
     this.logger = logger;
     this.onClose = onClose;
@@ -43,7 +63,7 @@ class RealtimeConnection {
 
     this.pingInterval = setInterval(() => {
       try {
-        this.sendFrame(0x9, Buffer.alloc(0));
+        this.sendFrame(0x9, Buffer.alloc(0)); // Ping
       } catch (error) {
         this.logger.warn('Realtime ping konnte nicht gesendet werden. Schließe Verbindung.');
         this.cleanup();
@@ -51,6 +71,11 @@ class RealtimeConnection {
     }, 30_000);
   }
 
+  /**
+   * Sends a JSON payload to the client as a WebSocket text frame.
+   * @param event The name of the event.
+   * @param payload The data to send.
+   */
   send(event: string, payload: unknown) {
     if (this.closed) {
       return;
@@ -58,13 +83,17 @@ class RealtimeConnection {
 
     const data = JSON.stringify({ event, payload });
     try {
-      this.sendFrame(0x1, Buffer.from(data));
+      this.sendFrame(0x1, Buffer.from(data)); // Text frame
     } catch (error) {
       this.logger.warn(`Realtime-Nachricht konnte nicht gesendet werden: ${String(error)}`);
       this.cleanup();
     }
   }
 
+  /**
+   * Closes the WebSocket connection gracefully.
+   * @param code The WebSocket closing status code.
+   */
   close(code = 1000) {
     if (this.closed) {
       return;
@@ -72,13 +101,17 @@ class RealtimeConnection {
     try {
       const closeBuffer = Buffer.alloc(2);
       closeBuffer.writeUInt16BE(code, 0);
-      this.sendFrame(0x8, closeBuffer);
+      this.sendFrame(0x8, closeBuffer); // Close frame
     } catch (error) {
       this.logger.debug(`Realtime-Closing-Frame konnte nicht gesendet werden: ${String(error)}`);
     }
     this.cleanup();
   }
 
+  /**
+   * Handles incoming data chunks from the socket, buffering and parsing frames.
+   * @param chunk The data chunk received from the socket.
+   */
   private handleChunk(chunk: Buffer) {
     this.buffer = Buffer.concat([this.buffer, chunk]);
 
@@ -91,25 +124,30 @@ class RealtimeConnection {
       const { opcode, data } = frame;
 
       if (opcode === 0x8) {
+        // Close frame
         this.close();
         return;
       }
 
       if (opcode === 0x9) {
-        // ping
-        this.sendFrame(0xA, data);
+        // Ping
+        this.sendFrame(0xa, data); // Send Pong
         continue;
       }
 
-      if (opcode === 0xA) {
-        // pong - ignore
+      if (opcode === 0xa) {
+        // Pong - ignore
         continue;
       }
 
-      // Currently we do not process incoming text/binary frames.
+      // Currently we do not process incoming text/binary frames from clients.
     }
   }
 
+  /**
+   * Tries to extract a complete WebSocket frame from the internal buffer.
+   * @returns The parsed frame with its opcode and data, or null if a full frame is not yet available.
+   */
   private extractFrame(): { opcode: number; data: Buffer } | null {
     if (this.buffer.length < 2) {
       return null;
@@ -164,13 +202,18 @@ class RealtimeConnection {
     return { opcode, data: payload };
   }
 
+  /**
+   * Constructs and sends a single WebSocket frame.
+   * @param opcode The opcode for the frame (e.g., 0x1 for text, 0x9 for ping).
+   * @param data The payload for the frame.
+   */
   private sendFrame(opcode: number, data: Buffer) {
     if (this.socket.destroyed) {
       throw new Error('Socket geschlossen');
     }
 
     const payloadLength = data.length;
-    const firstByte = 0x80 | (opcode & 0x0f);
+    const firstByte = 0x80 | (opcode & 0x0f); // FIN bit set
     let header: Buffer;
 
     if (payloadLength < 126) {
@@ -191,6 +234,9 @@ class RealtimeConnection {
     this.socket.write(frame);
   }
 
+  /**
+   * Cleans up the connection resources (socket, intervals) and calls the onClose handler.
+   */
   private cleanup() {
     if (this.closed) {
       return;
@@ -206,6 +252,12 @@ class RealtimeConnection {
   }
 }
 
+/**
+ * A custom WebSocket gateway for broadcasting real-time Point of Sale events.
+ *
+ * This gateway manually handles the WebSocket handshake and framing, providing a lightweight
+ * solution for pushing updates to connected clients without the overhead of libraries like Socket.IO.
+ */
 @Injectable()
 export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PosRealtimeGateway.name);
@@ -217,6 +269,9 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly adapterHost: HttpAdapterHost) {}
 
+  /**
+   * Lifecycle hook that initializes the WebSocket upgrade handler on the HTTP server.
+   */
   onModuleInit() {
     const httpServer = this.adapterHost?.httpAdapter?.getHttpServer?.();
     if (!httpServer || typeof httpServer.on !== 'function') {
@@ -227,28 +282,51 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.httpServer.on('upgrade', this.handleUpgrade);
   }
 
+  /**
+   * Lifecycle hook that cleans up connections and removes the upgrade handler when the module is destroyed.
+   */
   onModuleDestroy() {
     if (this.httpServer && typeof this.httpServer.off === 'function') {
       this.httpServer.off('upgrade', this.handleUpgrade);
     }
-    this.clients.forEach(client => client.close(1001));
+    this.clients.forEach(client => client.close(1001)); // Going away
     this.clients.clear();
   }
 
+  /**
+   * Registers a listener for an internal event.
+   * @param event The name of the event.
+   * @param listener The callback function.
+   */
   on(event: string, listener: (payload: unknown) => void) {
     this.emitter.on(event, listener);
   }
 
+  /**
+   * Unregisters a listener for an internal event.
+   * @param event The name of the event.
+   * @param listener The callback function.
+   */
   off(event: string, listener: (payload: unknown) => void) {
     this.emitter.off(event, listener);
   }
 
+  /**
+   * Broadcasts an event and its payload to all connected clients.
+   * @param event The name of the event.
+   * @param payload The data to send.
+   */
   broadcast(event: string, payload: unknown) {
     this.logger.verbose(`Broadcasting POS realtime event ${event}`);
     this.emitter.emit(event, payload);
     this.clients.forEach(client => client.send(event, payload));
   }
 
+  /**
+   * Caches and broadcasts queue metrics to all connected clients.
+   * @param queue The name of the queue.
+   * @param metrics The metrics data for the queue.
+   */
   broadcastQueueMetrics(queue: string, metrics: Record<string, unknown>) {
     const payload: QueueMetricEvent = {
       queue,
@@ -259,6 +337,12 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.broadcast('queue.metrics', payload);
   }
 
+  /**
+   * Caches and broadcasts a system error to all connected clients.
+   * @param source The source of the error.
+   * @param error The error object or message.
+   * @param details Optional additional details.
+   */
   broadcastSystemError(source: string, error: unknown, details?: unknown) {
     const occurredAt = new Date().toISOString();
     const message =
@@ -283,6 +367,9 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
     this.broadcast('system.error', event);
   }
 
+  /**
+   * Handles the HTTP 'upgrade' event to establish a WebSocket connection.
+   */
   private readonly handleUpgrade = (request: IncomingMessage, socket: Socket) => {
     try {
       if (!request.url) {
@@ -293,6 +380,7 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
       const host = request.headers.host ?? 'localhost';
       const url = new URL(request.url, `http://${host}`);
       if (url.pathname !== '/ws/pos') {
+        // This handler is only for the POS WebSocket endpoint.
         return;
       }
 
@@ -316,6 +404,7 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
       this.clients.add(connection);
       this.logger.log(`Realtime-Client verbunden (${this.clients.size} aktiv).`);
 
+      // Send initial state upon connection
       this.queueMetrics.forEach(metric => connection.send('queue.metrics', metric));
       this.recentErrors.forEach(error => connection.send('system.error', error));
     } catch (error) {
@@ -328,6 +417,10 @@ export class PosRealtimeGateway implements OnModuleInit, OnModuleDestroy {
     }
   };
 
+  /**
+   * Removes a connection from the set of active clients.
+   * @param connection The connection to remove.
+   */
   private removeConnection(connection: RealtimeConnection) {
     if (this.clients.delete(connection)) {
       this.logger.log(`Realtime-Client getrennt (${this.clients.size} verbleibend).`);

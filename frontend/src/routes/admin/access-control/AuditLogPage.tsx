@@ -1,10 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AuditLogEntry, listAuditLogs } from '../../../api/accessControl';
 
+/**
+ * Formats a date string into a localized format.
+ * @param {string} value - The date string to format.
+ * @returns {string} The formatted date string.
+ */
 function formatDate(value: string) {
   return new Date(value).toLocaleString('de-DE');
 }
 
+/**
+ * A page component for displaying and filtering audit logs.
+ *
+ * This component fetches audit log entries from the API and provides
+ * UI controls for filtering by action, a free-text search, and a date range.
+ * It displays the filtered results in a table.
+ *
+ * @returns {JSX.Element} The rendered audit log page.
+ */
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);

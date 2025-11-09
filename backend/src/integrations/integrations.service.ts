@@ -8,16 +8,29 @@ import { CsvExportRequestDto } from './dto/csv-export-request.dto';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
 import { TriggerWebhookDto } from './dto/trigger-webhook.dto';
 
+/**
+ * Service for handling integrations like CSV exports and webhooks.
+ */
 @Injectable()
 export class IntegrationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Lists all CSV export presets.
+   * @returns A promise that resolves to a list of CSV export presets.
+   */
   async listCsvPresets() {
     return this.prisma.csvExportPreset.findMany({
       orderBy: { createdAt: 'desc' },
     });
   }
 
+  /**
+   * Creates a new CSV export preset.
+   * @param dto - The data for creating the preset.
+   * @param ownerId - The ID of the user who owns the preset.
+   * @returns A promise that resolves to the newly created preset.
+   */
   async createCsvPreset(dto: CreateCsvPresetDto, ownerId?: number) {
     return this.prisma.csvExportPreset.create({
       data: {
@@ -31,6 +44,11 @@ export class IntegrationsService {
     });
   }
 
+  /**
+   * Generates a CSV export of sales data.
+   * @param dto - The request data for the CSV export.
+   * @returns A promise that resolves to an object containing the CSV file content and metadata.
+   */
   async generateCsvExport(dto: CsvExportRequestDto) {
     const preset = dto.presetId
       ? await this.prisma.csvExportPreset.findUnique({ where: { id: dto.presetId } })
@@ -93,12 +111,21 @@ export class IntegrationsService {
     };
   }
 
+  /**
+   * Lists all API webhooks.
+   * @returns A promise that resolves to a list of webhooks.
+   */
   async listWebhooks() {
     return this.prisma.apiWebhook.findMany({
       orderBy: { createdAt: 'desc' },
     });
   }
 
+  /**
+   * Creates a new API webhook.
+   * @param dto - The data for creating the webhook.
+   * @returns A promise that resolves to the newly created webhook.
+   */
   async createWebhook(dto: CreateWebhookDto) {
     return this.prisma.apiWebhook.create({
       data: {
@@ -110,6 +137,11 @@ export class IntegrationsService {
     });
   }
 
+  /**
+   * Triggers a webhook for testing purposes.
+   * @param dto - The data for triggering the webhook.
+   * @returns A promise that resolves to an object indicating the delivery status.
+   */
   async triggerWebhook(dto: TriggerWebhookDto) {
     const webhook = await this.prisma.apiWebhook.findUnique({ where: { id: dto.webhookId } });
     if (!webhook) {
@@ -151,11 +183,24 @@ export class IntegrationsService {
     };
   }
 
+  /**
+   * Normalizes the 'items' property of a sale, ensuring it's always an array.
+   * @param sale - The sale object.
+   * @returns An array of sale items.
+   */
   private normaliseItems(sale: { items: Prisma.JsonValue }): Array<Record<string, unknown>> {
     const items = sale.items as Array<Record<string, unknown>> | null;
     return Array.isArray(items) ? items : [];
   }
 
+  /**
+   * Builds a single CSV row based on the column definitions.
+   * @param columns - The column definitions.
+   * @param delimiter - The CSV delimiter.
+   * @param sale - The sale data.
+   * @param item - The item data (if applicable).
+   * @returns The formatted CSV row as a string.
+   */
   private buildRow(
     columns: CsvColumnDefinitionDto[],
     delimiter: string,
@@ -178,6 +223,13 @@ export class IntegrationsService {
     return values.map((value) => this.escapeCsv(value, delimiter)).join(delimiter);
   }
 
+  /**
+   * Resolves a value from a sale or item object using a path string.
+   * @param path - The path to the value (e.g., 'sale.total', 'item.name').
+   * @param sale - The sale object.
+   * @param item - The item object.
+   * @returns The resolved value, or undefined if not found.
+   */
   private resolvePath(
     path: string,
     sale: Pick<Sale, 'receiptNo' | 'total' | 'paymentMethod' | 'createdAt' | 'status' | 'items' | 'reference'>,
@@ -195,6 +247,12 @@ export class IntegrationsService {
     return undefined;
   }
 
+  /**
+   * Traverses an object using a dot-separated path string.
+   * @param path - The path to the value.
+   * @param target - The object to traverse.
+   * @returns The resolved value, or undefined if not found.
+   */
   private walkPath(path: string, target: Record<string, unknown>) {
     return path.split('.').reduce<unknown>((value, key) => {
       if (value && typeof value === 'object' && key in (value as Record<string, unknown>)) {
@@ -204,6 +262,12 @@ export class IntegrationsService {
     }, target);
   }
 
+  /**
+   * Escapes a string for use in a CSV file.
+   * @param value - The string to escape.
+   * @param delimiter - The CSV delimiter.
+   * @returns The escaped string.
+   */
   private escapeCsv(value: string, delimiter: string) {
     if (value.includes(delimiter) || value.includes('"') || value.includes('\n')) {
       return `"${value.replace(/"/g, '""')}"`;
@@ -211,6 +275,11 @@ export class IntegrationsService {
     return value;
   }
 
+  /**
+   * Converts a Prisma.Decimal, number, or string to a number.
+   * @param value The value to convert.
+   * @returns The converted number.
+   */
   private asNumber(value: Prisma.Decimal | number | string) {
     if (typeof value === 'number') {
       return value;

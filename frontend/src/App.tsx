@@ -20,6 +20,15 @@ const navLinks = [
   { to: '/admin/access-control', label: 'Access Control' },
 ];
 
+/**
+ * The main application component.
+ *
+ * This component sets up the main layout, including the header and navigation,
+ * and defines the routing for the entire application using React Router.
+ * It also wraps the application in the necessary context providers for real-time updates.
+ *
+ * @returns {JSX.Element} The rendered application structure.
+ */
 export default function App() {
   return (
     <PosRealtimeProvider>

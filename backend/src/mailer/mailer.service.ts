@@ -7,6 +7,13 @@ interface SmtpConfig {
   port: number;
 }
 
+/**
+ * Service for sending emails.
+ *
+ * This service provides methods for sending different types of emails, such as receipts and reports.
+ * It uses a simple SMTP client implementation to deliver the emails.
+ * If SMTP is not configured, it will log the email content to the console instead.
+ */
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
@@ -19,14 +26,33 @@ export class MailerService {
     this.smtpConfig = host ? { host, port } : null;
   }
 
+  /**
+   * Sends a receipt email.
+   *
+   * @param to The recipient's email address.
+   * @param subject The subject of the email.
+   * @param html The HTML content of the email.
+   */
   async sendReceiptEmail(to: string, subject: string, html: string) {
     await this.sendMail({ to, subject, html });
   }
 
+  /**
+   * Sends an email notification that a report is ready.
+   *
+   * @param to The recipient's email address.
+   * @param subject The subject of the email.
+   * @param html The HTML content of the email.
+   */
   async sendReportReadyEmail(to: string, subject: string, html: string) {
     await this.sendMail({ to, subject, html });
   }
 
+  /**
+   * Delivers an email using a direct socket connection to an SMTP server.
+   *
+   * @param options The options for delivering the email.
+   */
   private async deliverMail(options: {
     from: string;
     to: string;
@@ -97,6 +123,11 @@ export class MailerService {
     }
   }
 
+  /**
+   * Sends an email. If SMTP is not configured, it logs the email to the console.
+   *
+   * @param options The options for the email.
+   */
   private async sendMail(options: { to: string; subject: string; html: string }) {
     const from = this.configService.get<string>('SMTP_FROM', 'no-reply@fuchspos.local');
 

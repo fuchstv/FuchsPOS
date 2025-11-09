@@ -18,6 +18,18 @@ const currency = new Intl.NumberFormat('de-DE', {
   currency: 'EUR',
 });
 
+/**
+ * Renders the main Point of Sale (POS) dashboard.
+ * This component provides the primary interface for sales operations, including:
+ * - Displaying a catalog of products for quick selection.
+ * - Managing the shopping cart (adding, removing, clearing items).
+ * - Processing payments through various methods, with support for offline transactions.
+ * - Handling customer email input for sending digital receipts.
+ * - Displaying real-time updates for preorders and cash events.
+ * - Showing the system's health and connectivity status.
+ * - Managing a queue for payments made while offline, with retry logic.
+ * @returns {JSX.Element} The POS dashboard component.
+ */
 export default function PosDashboard() {
   const {
     catalog,

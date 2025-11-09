@@ -90,6 +90,14 @@ type FilterState = {
   locationId: string;
 };
 
+/**
+ * Renders the reporting dashboard, providing a comprehensive overview of business metrics.
+ * It allows users to filter data by date range, granularity, and location.
+ * The dashboard visualizes sales trends, employee performance, and category-wise revenue distribution.
+ * It also includes a section for monitoring expiring product batches and a service for requesting
+ * and downloading detailed reports in CSV or XLSX format.
+ * @returns {JSX.Element} The reporting dashboard component.
+ */
 export default function ReportingDashboard() {
   const [filters, setFilters] = useState<FilterState>({
     startDate: toDateInput(defaultStart),

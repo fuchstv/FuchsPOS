@@ -10,6 +10,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import type { PreorderItemInput, WoltOrderSyncPayload } from './types';
 
+/**
+ * Represents the data payload for a delivery document.
+ */
 export type DeliveryDocumentPayload = {
   id: number;
   type: DeliveryDocumentType;
@@ -19,6 +22,9 @@ export type DeliveryDocumentPayload = {
   payload: Record<string, any>;
 };
 
+/**
+ * Represents the data payload for a cash event.
+ */
 export type CashEventPayload = {
   id: number;
   type: CashEventType;
@@ -28,6 +34,9 @@ export type CashEventPayload = {
   preorder?: { id: number; externalReference: string } | null;
 };
 
+/**
+ * Represents a single entry in the status history of a pre-order.
+ */
 export type PreorderStatusHistoryPayload = {
   id: number;
   status: PreorderStatus;
@@ -35,6 +44,9 @@ export type PreorderStatusHistoryPayload = {
   notes?: string | null;
 };
 
+/**
+ * Represents a summary of a pre-order.
+ */
 export type PreorderSummaryPayload = {
   id: number;
   externalReference: string;
@@ -44,18 +56,29 @@ export type PreorderSummaryPayload = {
   sale?: { id: number; receiptNo: string | null } | null;
 };
 
+/**
+ * Represents the full data payload for a pre-order.
+ */
 export type PreorderPayload = PreorderSummaryPayload & {
   items: PreorderItemInput[];
   documents: DeliveryDocumentPayload[];
   statusHistory: PreorderStatusHistoryPayload[];
 };
 
+/**
+ * Represents data that augments a sale with related pre-order information.
+ */
 export type SaleAugmentation = {
   documents: DeliveryDocumentPayload[];
   cashEvents: CashEventPayload[];
   preorder?: PreorderSummaryPayload;
 };
 
+/**
+ * Service for managing pre-orders, cash events, and delivery documents.
+ * It handles the lifecycle of pre-orders from creation to completion,
+ * including integration with external services like Wolt.
+ */
 @Injectable()
 export class PreordersService {
   private readonly logger = new Logger(PreordersService.name);
@@ -65,6 +88,10 @@ export class PreordersService {
     private readonly realtime: PosRealtimeGateway,
   ) {}
 
+  /**
+   * Lists all active pre-orders (status ORDERED or READY).
+   * @returns A promise that resolves to an array of active pre-order payloads.
+   */
   async listActivePreorders(): Promise<PreorderPayload[]> {
     const preorders = await this.prisma.preorder.findMany({
       where: { status: { in: [PreorderStatus.ORDERED, PreorderStatus.READY] } },
@@ -81,6 +108,11 @@ export class PreordersService {
     return payload;
   }
 
+  /**
+   * Lists recent cash events.
+   * @param limit - The maximum number of events to return.
+   * @returns A promise that resolves to an array of cash event payloads.
+   */
   async listRecentCashEvents(limit = 25): Promise<CashEventPayload[]> {
     const events = await this.prisma.cashEvent.findMany({
       orderBy: { createdAt: 'desc' },
@@ -94,6 +126,11 @@ export class PreordersService {
     return events.map(event => this.toCashEventPayload(event));
   }
 
+  /**
+   * Builds an augmentation object for a sale, containing related documents, cash events, and pre-order info.
+   * @param saleId - The ID of the sale to augment.
+   * @returns A promise that resolves to the sale augmentation object.
+   */
   async buildSaleAugmentation(saleId: number): Promise<SaleAugmentation> {
     const [documents, events, preorder] = await Promise.all([
       this.prisma.deliveryDocument.findMany({
@@ -121,6 +158,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Creates or updates a pre-order based on data from a Wolt order.
+   * @param order - The Wolt order synchronization payload.
+   * @returns A promise that resolves to the created or updated pre-order payload.
+   */
   async upsertFromWolt(order: WoltOrderSyncPayload): Promise<PreorderPayload> {
     const status = this.mapWoltStatus(order.status);
     const scheduledPickup = order.scheduledPickup ? new Date(order.scheduledPickup) : null;
@@ -211,6 +253,13 @@ export class PreordersService {
     return payload;
   }
 
+  /**
+   * Transitions a pre-order to a new status, creating associated documents and events.
+   * @param preorderId - The ID of the pre-order to transition.
+   * @param status - The new status.
+   * @param options - Optional data for the transition, like notes or a sale ID.
+   * @returns A promise that resolves to an object containing the updated pre-order and any created documents and events.
+   */
   async transitionStatus(
     preorderId: number,
     status: PreorderStatus,
@@ -298,6 +347,11 @@ export class PreordersService {
     return { preorder, documents, events };
   }
 
+  /**
+   * Handles the completion of a sale, linking it to a pre-order if a reference is provided.
+   * @param sale - The completed sale object.
+   * @param reference - An optional reference to a pre-order.
+   */
   async handleSaleCompletion(sale: Sale, reference?: string | null) {
     const saleEvent = await this.createCashEvent(this.prisma, {
       saleId: sale.id,
@@ -332,6 +386,12 @@ export class PreordersService {
     });
   }
 
+  /**
+   * Loads the full payload for a pre-order by its ID.
+   * @param id - The ID of the pre-order.
+   * @param tx - An optional Prisma transaction client.
+   * @returns A promise that resolves to the pre-order payload.
+   */
   private async loadPreorderPayload(id: number, tx?: Prisma.TransactionClient): Promise<PreorderPayload> {
     const client = tx ?? this.prisma;
     const preorder = await client.preorder.findUnique({
@@ -350,6 +410,14 @@ export class PreordersService {
     return this.toPreorderPayload(preorder);
   }
 
+  /**
+   * Creates a delivery document for a pre-order.
+   * @param tx - The Prisma transaction client.
+   * @param preorderId - The ID of the pre-order.
+   * @param type - The type of document to create.
+   * @param metadata - Optional metadata for the document.
+   * @returns A promise that resolves to the created document payload.
+   */
   private async createDeliveryDocument(
     tx: Prisma.TransactionClient,
     preorderId: number,
@@ -396,6 +464,12 @@ export class PreordersService {
     return this.toDocumentPayload(document);
   }
 
+  /**
+   * Creates a cash event.
+   * @param client - The Prisma client or transaction client.
+   * @param data - The data for the cash event.
+   * @returns A promise that resolves to the created cash event payload.
+   */
   private async createCashEvent(
     client: Prisma.TransactionClient | PrismaService,
     data: {
@@ -421,6 +495,11 @@ export class PreordersService {
     return this.toCashEventPayload(event);
   }
 
+  /**
+   * Converts a pre-order from the database into a full PreorderPayload.
+   * @param preorder - The pre-order object from Prisma.
+   * @returns The full pre-order payload.
+   */
   private toPreorderPayload(preorder: any): PreorderPayload {
     return {
       ...this.toPreorderSummary(preorder),
@@ -434,6 +513,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Converts a pre-order from the database into a PreorderSummaryPayload.
+   * @param preorder - The pre-order object from Prisma.
+   * @returns The pre-order summary payload.
+   */
   private toPreorderSummary(preorder: any): PreorderSummaryPayload {
     return {
       id: preorder.id,
@@ -447,6 +531,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Converts a delivery document from the database into a DeliveryDocumentPayload.
+   * @param document - The document object from Prisma.
+   * @returns The delivery document payload.
+   */
   private toDocumentPayload(document: any): DeliveryDocumentPayload {
     return {
       id: document.id,
@@ -458,6 +547,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Converts a cash event from the database into a CashEventPayload.
+   * @param event - The event object from Prisma.
+   * @returns The cash event payload.
+   */
   private toCashEventPayload(event: any): CashEventPayload {
     return {
       id: event.id,
@@ -469,6 +563,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Converts a status history entry from the database into a PreorderStatusHistoryPayload.
+   * @param history - The history object from Prisma.
+   * @returns The status history payload.
+   */
   private toStatusHistoryPayload(history: any): PreorderStatusHistoryPayload {
     return {
       id: history.id,
@@ -478,6 +577,11 @@ export class PreordersService {
     };
   }
 
+  /**
+   * Normalizes the items from a pre-order's JSON field into a structured array.
+   * @param items - The raw `items` JSON value from the database.
+   * @returns An array of normalized pre-order items.
+   */
   private normaliseItems(items: Prisma.JsonValue): PreorderItemInput[] {
     if (!items || !Array.isArray(items)) {
       return [];
@@ -491,6 +595,11 @@ export class PreordersService {
     }));
   }
 
+  /**
+   * Converts a string status into a PreorderStatus enum value.
+   * @param status - The status string.
+   * @returns The corresponding PreorderStatus enum value.
+   */
   private toStatus(status: string): PreorderStatus {
     const normalised = status.toLowerCase();
     switch (normalised) {
@@ -506,23 +615,44 @@ export class PreordersService {
     }
   }
 
+  /**
+   * Maps a Wolt status string to a PreorderStatus enum value.
+   * @param status - The Wolt status string.
+   * @returns The corresponding PreorderStatus.
+   */
   private mapWoltStatus(status: string): PreorderStatus {
     return this.toStatus(status);
   }
 
+  /**
+   * Generates a unique document number with a given prefix.
+   * @param prefix - The prefix for the document number (e.g., 'DN' for delivery note).
+   * @returns A unique document number string.
+   */
   private generateDocumentNumber(prefix: string) {
     return `${prefix}-${Date.now()}`;
   }
 
+  /**
+   * Broadcasts a pre-order update to connected real-time clients.
+   * @param preorder - The updated pre-order payload.
+   */
   private emitPreorderUpdate(preorder: PreorderPayload) {
     this.realtime.broadcast('preorder.updated', { preorder });
     void this.publishPreorderMetrics();
   }
 
+  /**
+   * Broadcasts a new cash event to connected real-time clients.
+   * @param event - The created cash event payload.
+   */
   private emitCashEvent(event: CashEventPayload) {
     this.realtime.broadcast('cash-event.created', { event });
   }
 
+  /**
+   * Calculates and broadcasts metrics for active pre-orders.
+   */
   private async publishPreorderMetrics() {
     try {
       const [total, ready] = await Promise.all([

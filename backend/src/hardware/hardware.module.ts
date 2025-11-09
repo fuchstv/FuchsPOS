@@ -7,6 +7,10 @@ import { MockReceiptPrinterService } from './mock-receipt-printer.service';
 import { MockScannerService } from './mock-scanner.service';
 import { PosHardwareService } from './pos-hardware.service';
 
+/**
+ * The module for managing POS hardware.
+ * It provides mock implementations for a receipt printer and a barcode scanner.
+ */
 @Module({
   providers: [
     MockReceiptPrinterService,

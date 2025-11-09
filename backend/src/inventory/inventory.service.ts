@@ -18,10 +18,21 @@ type ParsedBnnItem = {
   metadata?: Record<string, any>;
 };
 
+/**
+ * Service for managing inventory, including goods receipts, inventory counts, and price changes.
+ */
 @Injectable()
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Imports a goods receipt from a BNN (Bundesverband Naturkost Naturwaren) document.
+   * This method parses the document, ensures that the supplier and products exist,
+   * and creates a new goods receipt with its items and batches.
+   *
+   * @param dto - The data transfer object containing the BNN document and metadata.
+   * @returns A promise that resolves to the newly created goods receipt.
+   */
   async importGoodsReceipt(dto: ImportBnnDocumentDto) {
     const items = this.parseBnnPayload(dto);
 
@@ -120,6 +131,12 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Creates a new inventory count.
+   *
+   * @param dto - The data transfer object for creating the inventory count.
+   * @returns A promise that resolves to the newly created inventory count with its items.
+   */
   async createInventoryCount(dto: CreateInventoryCountDto) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: dto.tenantId } });
     if (!tenant) {
@@ -174,6 +191,15 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Finalizes an existing inventory count.
+   * This updates the counted quantities, calculates differences, and optionally
+   * creates inventory adjustments to update the stock levels.
+   *
+   * @param id - The ID of the inventory count to finalize.
+   * @param dto - The data transfer object for finalizing the count.
+   * @returns A promise that resolves to the completed inventory count.
+   */
   async finalizeInventoryCount(id: number, dto: FinalizeInventoryCountDto) {
     const inventoryCount = await this.prisma.inventoryCount.findUnique({
       where: { id },
@@ -289,6 +315,14 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Records a price change for a product.
+   * This updates the product's default price and creates a price history entry.
+   *
+   * @param dto - The data transfer object for the price change.
+   * @returns A promise that resolves to an object containing the updated product,
+   *          the price history entry, and the promotion (if any).
+   */
   async recordPriceChange(dto: RecordPriceChangeDto) {
     const product = await this.findProductOrThrow(dto.tenantId, dto.productSku);
     const oldPrice = parseFloat(product.defaultPrice.toString());
@@ -342,6 +376,11 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Parses a BNN document payload based on its format.
+   * @param dto - The DTO containing the payload and format.
+   * @returns An array of parsed BNN items.
+   */
   private parseBnnPayload(dto: ImportBnnDocumentDto): ParsedBnnItem[] {
     switch (dto.format) {
       case BnnImportFormat.JSON:
@@ -354,6 +393,11 @@ export class InventoryService {
     }
   }
 
+  /**
+   * Parses a BNN document in JSON format.
+   * @param payload - The JSON string.
+   * @returns An array of parsed BNN items.
+   */
   private parseBnnJson(payload: string): ParsedBnnItem[] {
     let data: any;
     try {
@@ -370,6 +414,11 @@ export class InventoryService {
     return items.map((item: Record<string, any>) => this.normalizeBnnItem(item));
   }
 
+  /**
+   * Parses a BNN document in CSV format.
+   * @param payload - The CSV string.
+   * @returns An array of parsed BNN items.
+   */
   private parseBnnCsv(payload: string): ParsedBnnItem[] {
     const lines = payload
       .split(/\r?\n/)
@@ -395,6 +444,11 @@ export class InventoryService {
     return items.map((item) => this.normalizeBnnItem(item));
   }
 
+  /**
+   * Parses a BNN document in XML format.
+   * @param payload - The XML string.
+   * @returns An array of parsed BNN items.
+   */
   private parseBnnXml(payload: string): ParsedBnnItem[] {
     const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
     const items: ParsedBnnItem[] = [];
@@ -416,6 +470,11 @@ export class InventoryService {
     return items;
   }
 
+  /**
+   * Normalizes a raw BNN item object into a standardized format.
+   * @param raw - The raw item object from the parsed document.
+   * @returns A normalized BNN item.
+   */
   private normalizeBnnItem(raw: Record<string, any>): ParsedBnnItem {
     const normalized = this.withLowerCaseKeys(raw);
     const sku =
@@ -471,6 +530,13 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Ensures a supplier exists for the given tenant, creating it if necessary.
+   * @param tenantId - The ID of the tenant.
+   * @param name - The name of the supplier.
+   * @param supplierNumber - The BNN supplier number.
+   * @returns A promise that resolves to the supplier.
+   */
   private async ensureSupplier(tenantId: string, name?: string, supplierNumber?: string) {
     if (!name && !supplierNumber) {
       return null;
@@ -504,6 +570,13 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Ensures a product exists for the given tenant, creating it if necessary.
+   * @param tenantId - The ID of the tenant.
+   * @param supplierId - The ID of the supplier.
+   * @param item - The parsed BNN item data.
+   * @returns A promise that resolves to the product.
+   */
   private async ensureProduct(
     tenantId: string,
     supplierId: number | null,
@@ -534,6 +607,13 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Ensures a storage location exists for the given tenant, creating it if necessary.
+   * @param tenantId - The ID of the tenant.
+   * @param code - The code of the storage location.
+   * @param description - The description of the storage location.
+   * @returns A promise that resolves to the storage location.
+   */
   private async ensureStorageLocation(tenantId: string, code: string, description?: string) {
     const existing = await this.prisma.storageLocation.findUnique({
       where: {
@@ -557,6 +637,12 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Finds a product by SKU for a given tenant, or throws a NotFoundException.
+   * @param tenantId - The ID of the tenant.
+   * @param sku - The SKU of the product.
+   * @returns A promise that resolves to the product.
+   */
   private async findProductOrThrow(tenantId: string, sku: string) {
     const product = await this.prisma.product.findUnique({
       where: {
@@ -574,6 +660,12 @@ export class InventoryService {
     return product;
   }
 
+  /**
+   * Finds a batch by product ID and lot number.
+   * @param productId - The ID of the product.
+   * @param lotNumber - The lot number of the batch.
+   * @returns A promise that resolves to the batch, or null if not found.
+   */
   private async findBatch(productId: number, lotNumber: string) {
     return this.prisma.batch.findFirst({
       where: {
@@ -583,6 +675,11 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Converts a value to a Prisma.Decimal.
+   * @param value - The value to convert.
+   * @returns A Prisma.Decimal instance.
+   */
   private toDecimal(value: number | string | Prisma.Decimal | null | undefined) {
     if (value === null || value === undefined) {
       return new Prisma.Decimal(0);
@@ -595,6 +692,11 @@ export class InventoryService {
     return new Prisma.Decimal(value as any);
   }
 
+  /**
+   * Creates a new object with all keys converted to lower case.
+   * @param input - The input object.
+   * @returns A new object with lower-cased keys.
+   */
   private withLowerCaseKeys(input: Record<string, any>) {
     const result: Record<string, any> = { ...input };
     for (const key of Object.keys(input)) {
@@ -603,6 +705,11 @@ export class InventoryService {
     return result;
   }
 
+  /**
+   * Normalizes a date string into ISO 8601 format.
+   * @param value - The date string to normalize.
+   * @returns The normalized ISO date string, or undefined if the input is invalid.
+   */
   private normalizeDateString(value: any) {
     if (!value) {
       return undefined;

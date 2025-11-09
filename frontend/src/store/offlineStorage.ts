@@ -20,18 +20,32 @@ interface PersistedCatalog {
 
 interface PersistedPayment extends PaymentIntent {}
 
+/**
+ * Provides a summary of the state of the offline storage for diagnostic purposes.
+ */
 export type OfflineDiagnostics = {
+  /** Indicates whether IndexedDB is supported and being used. */
   supported: boolean;
+  /** Information about the persisted shopping cart. */
   cart: { items: number; updatedAt: string | null; grossTotal?: number } | null;
+  /** Information about the persisted product catalog. */
   catalog: { items: number; updatedAt: string | null } | null;
+  /** A summary of the payment queue status. */
   payments: {
+    /** The total number of payments in the queue. */
     total: number;
+    /** The number of payments with a 'pending' status. */
     pending: number;
+    /** The number of payments with a 'failed' status. */
     failed: number;
+    /** The number of payments with a 'conflict' status. */
     conflict: number;
+    /** The timestamp for the next scheduled retry attempt. */
     nextRetryAt?: string | null;
+    /** The timestamp of the most recent sync attempt. */
     latestAttemptAt?: string | null;
   };
+  /** The unique identifier for the terminal, if set. */
   terminalId?: string | null;
 };
 
@@ -126,6 +140,11 @@ async function runTransaction<T>(
   });
 }
 
+/**
+ * Loads the persisted shopping cart from IndexedDB.
+ * Falls back to an in-memory store if IndexedDB is not available.
+ * @returns {Promise<PersistedCart | null>} A promise that resolves to the persisted cart data, or null if not found.
+ */
 export async function loadCart(): Promise<PersistedCart | null> {
   if (!isBrowser) {
     return memoryStore.cart;
@@ -139,6 +158,12 @@ export async function loadCart(): Promise<PersistedCart | null> {
   }
 }
 
+/**
+ * Persists the current shopping cart to IndexedDB.
+ * @param {CartItem[]} items - The list of items in the cart.
+ * @param {CartTotals} totals - The calculated totals for the cart.
+ * @returns {Promise<void>} A promise that resolves when the cart has been persisted.
+ */
 export async function persistCart(items: CartItem[], totals: CartTotals) {
   if (!isBrowser) {
     memoryStore.cart = { items, totals, updatedAt: now() };
@@ -150,6 +175,10 @@ export async function persistCart(items: CartItem[], totals: CartTotals) {
   });
 }
 
+/**
+ * Clears the persisted shopping cart from IndexedDB.
+ * @returns {Promise<void>} A promise that resolves when the cart has been cleared.
+ */
 export async function clearCart() {
   if (!isBrowser) {
     memoryStore.cart = null;
@@ -161,6 +190,10 @@ export async function clearCart() {
   });
 }
 
+/**
+ * Loads the product catalog from IndexedDB.
+ * @returns {Promise<CatalogItem[] | null>} A promise that resolves to the list of catalog items, or null if not found.
+ */
 export async function loadCatalog(): Promise<CatalogItem[] | null> {
   if (!isBrowser) {
     return memoryStore.catalog?.items ?? null;
@@ -177,6 +210,11 @@ export async function loadCatalog(): Promise<CatalogItem[] | null> {
   }
 }
 
+/**
+ * Persists the product catalog to IndexedDB.
+ * @param {CatalogItem[]} items - The list of catalog items to persist.
+ * @returns {Promise<void>} A promise that resolves when the catalog has been persisted.
+ */
 export async function persistCatalog(items: CatalogItem[]) {
   if (!isBrowser) {
     memoryStore.catalog = { items, updatedAt: now() };
@@ -188,6 +226,10 @@ export async function persistCatalog(items: CatalogItem[]) {
   });
 }
 
+/**
+ * Generates a UUID, preferring the browser's native crypto.randomUUID if available.
+ * @returns {string} A new UUID.
+ */
 function createUuid() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -205,6 +247,12 @@ function normalisePayment(payment: PersistedPayment): PersistedPayment {
   };
 }
 
+/**
+ * Adds a new payment request to the offline queue in IndexedDB.
+ * A unique ID and timestamp are generated for the payment record.
+ * @param {PaymentRequestPayload} payload - The payment request details to be enqueued.
+ * @returns {Promise<PersistedPayment>} A promise that resolves to the newly created and enqueued payment record.
+ */
 export async function enqueuePayment(payload: PaymentRequestPayload) {
   const record: PersistedPayment = {
     id: createUuid(),
@@ -228,6 +276,10 @@ export async function enqueuePayment(payload: PaymentRequestPayload) {
   return normalisePayment(record);
 }
 
+/**
+ * Retrieves all payment records from the offline queue.
+ * @returns {Promise<PersistedPayment[]>} A promise that resolves to an array of all queued payment records.
+ */
 export async function listQueuedPayments() {
   if (!isBrowser) {
     return Array.from(memoryStore.payments.values()).map(normalisePayment);
@@ -242,6 +294,11 @@ export async function listQueuedPayments() {
   }
 }
 
+/**
+ * Removes a specific payment record from the offline queue.
+ * @param {string} id - The unique identifier of the payment to remove.
+ * @returns {Promise<void>} A promise that resolves when the payment has been removed.
+ */
 export async function removeQueuedPayment(id: string) {
   if (!isBrowser) {
     memoryStore.payments.delete(id);
@@ -253,6 +310,12 @@ export async function removeQueuedPayment(id: string) {
   });
 }
 
+/**
+ * Marks a queued payment as failed, storing the error message and updating the last attempt timestamp.
+ * @param {string} id - The ID of the payment to mark as failed.
+ * @param {string} error - The error message to record.
+ * @returns {Promise<void>}
+ */
 export async function markPaymentFailed(id: string, error: string) {
   await patchQueuedPayment(id, {
     status: 'failed',
@@ -261,6 +324,13 @@ export async function markPaymentFailed(id: string, error: string) {
   });
 }
 
+/**
+ * Updates a queued payment record with a set of partial changes.
+ * This is used to update status, retry counts, error messages, etc.
+ * @param {string} id - The ID of the payment to update.
+ * @param {Partial<PersistedPayment>} patch - An object containing the fields to update.
+ * @returns {Promise<PersistedPayment | null>} A promise that resolves to the updated payment record, or null if not found.
+ */
 export async function patchQueuedPayment(
   id: string,
   patch: Partial<PersistedPayment>,
@@ -294,6 +364,11 @@ export async function patchQueuedPayment(
   });
 }
 
+/**
+ * Ensures that a unique terminal ID is generated and persisted if it doesn't already exist.
+ * This ID is used to identify the POS client in API requests.
+ * @returns {Promise<string>} A promise that resolves to the terminal ID.
+ */
 export async function ensureTerminalId(): Promise<string> {
   if (!isBrowser) {
     const existing = memoryStore.metadata.get('terminalId');
@@ -331,6 +406,10 @@ export async function ensureTerminalId(): Promise<string> {
   return generated;
 }
 
+/**
+ * Loads the persisted terminal ID from IndexedDB.
+ * @returns {Promise<string | null>} A promise that resolves to the terminal ID, or null if not found.
+ */
 export async function loadTerminalId(): Promise<string | null> {
   if (!isBrowser) {
     return memoryStore.metadata.get('terminalId') ?? null;
@@ -345,6 +424,12 @@ export async function loadTerminalId(): Promise<string | null> {
   }
 }
 
+/**
+ * Stores the user's preferred payment methods in IndexedDB.
+ * This is used to preserve the payment method order and availability offline.
+ * @param {PaymentMethod[]} methods - The list of payment methods to store.
+ * @returns {Promise<void>} A promise that resolves when the data is stored.
+ */
 export async function storePreferredPaymentMethods(methods: PaymentMethod[]) {
   if (!isBrowser) {
     memoryStore.metadata.set('paymentMethods', JSON.stringify(methods));
@@ -356,6 +441,10 @@ export async function storePreferredPaymentMethods(methods: PaymentMethod[]) {
   });
 }
 
+/**
+ * Loads the user's preferred payment methods from IndexedDB.
+ * @returns {Promise<PaymentMethod[] | null>} A promise that resolves to the list of payment methods, or null if not found.
+ */
 export async function loadPreferredPaymentMethods(): Promise<PaymentMethod[] | null> {
   if (!isBrowser) {
     const raw = memoryStore.metadata.get('paymentMethods');
@@ -376,6 +465,11 @@ export async function loadPreferredPaymentMethods(): Promise<PaymentMethod[] | n
   }
 }
 
+/**
+ * Gathers and returns a comprehensive diagnostics object about the state of offline storage.
+ * This is useful for debugging and displaying the offline status to the user.
+ * @returns {Promise<OfflineDiagnostics>} A promise that resolves to the offline diagnostics object.
+ */
 export async function loadOfflineDiagnostics(): Promise<OfflineDiagnostics> {
   if (!isBrowser) {
     const payments = Array.from(memoryStore.payments.values()).map(normalisePayment);

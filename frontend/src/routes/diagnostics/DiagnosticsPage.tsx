@@ -3,6 +3,11 @@ import { usePosStore } from '../../store/posStore';
 import { loadOfflineDiagnostics, type OfflineDiagnostics } from '../../store/offlineStorage';
 import { usePosRealtime } from '../../realtime/PosRealtimeContext';
 
+/**
+ * Formats a date string into a localized date and time string.
+ * @param {string | null | undefined} value - The date string to format.
+ * @returns {string} The formatted string or a dash if the value is falsy.
+ */
 function formatDateTime(value?: string | null) {
   if (!value) {
     return '—';
@@ -16,6 +21,11 @@ function formatDateTime(value?: string | null) {
   });
 }
 
+/**
+ * Formats a date string into a relative time string (e.g., "in 5 minutes").
+ * @param {string | null | undefined} value - The date string to format.
+ * @returns {string} The formatted relative time string or a dash.
+ */
 function formatRelative(value?: string | null) {
   if (!value) {
     return '—';
@@ -31,6 +41,16 @@ function formatRelative(value?: string | null) {
   return formatter.format(diffMinutes, 'minute');
 }
 
+/**
+ * A page component that displays system diagnostics and provides tools for managing offline data.
+ *
+ * This component shows the status of:
+ * - IndexedDB and offline storage (cart, catalog, payment queue).
+ * - The real-time WebSocket connection and any reported errors or metrics.
+ * - The queue of offline payments, with options to retry or remove them.
+ *
+ * @returns {JSX.Element} The rendered diagnostics page.
+ */
 export default function DiagnosticsPage() {
   const queuedPayments = usePosStore(state => state.queuedPayments);
   const syncQueuedPayments = usePosStore(state => state.syncQueuedPayments);

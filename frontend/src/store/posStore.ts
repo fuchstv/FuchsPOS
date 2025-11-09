@@ -63,36 +63,69 @@ const defaultPaymentMethods: PaymentMethodDefinition[] = [
   },
 ];
 
+/**
+ * Defines the input for processing a payment.
+ */
 type ProcessPaymentInput = {
+  /** The selected payment method. */
   paymentMethod: PaymentMethod;
+  /** Optional customer email for sending a digital receipt. */
   customerEmail?: string;
+  /** Optional reference for the payment (e.g., invoice number). */
   reference?: string;
 };
 
+/**
+ * Defines the state and actions for the Point of Sale Zustand store.
+ */
 type PosStore = {
+  /** The list of all available products. */
   catalog: CatalogItem[];
+  /** The current list of items in the shopping cart. */
   cart: CartItem[];
+  /** The available payment methods. */
   paymentMethods: PaymentMethodDefinition[];
+  /** The current state of the payment process. */
   paymentState: PaymentState;
+  /** The details of the most recently completed sale. */
   latestSale?: SaleResponse['sale'];
+  /** Any error message related to the POS operations. */
   error?: string;
+  /** A flag indicating if the POS is currently in offline mode. */
   isOffline: boolean;
+  /** A queue of payments made while offline, waiting to be synced. */
   queuedPayments: PaymentIntent[];
+  /** The unique identifier for this POS terminal. */
   terminalId: string;
+  /** A flag indicating if the store has been initialized. */
   initialized: boolean;
+  /** A list of active preorders. */
   preorders: PreorderRecord[];
+  /** A list of recent cash-related events. */
   cashEvents: CashEventRecord[];
+  /** Adds an item to the shopping cart. */
   addToCart: (id: string) => void;
+  /** Removes an item from the shopping cart. */
   removeFromCart: (id: string) => void;
+  /** Clears all items from the shopping cart. */
   clearCart: () => void;
+  /** Processes a payment for the current cart contents. */
   processPayment: (input: ProcessPaymentInput) => Promise<void>;
+  /** Initializes the store by loading persisted data and fetching initial state from the API. */
   initialize: () => Promise<void>;
+  /** Sets the offline status of the POS. */
   setOffline: (isOffline: boolean) => void;
+  /** Attempts to sync any queued offline payments with the server. */
   syncQueuedPayments: () => Promise<void>;
+  /** Manually triggers a retry for a specific queued payment. */
   retryQueuedPayment: (id: string) => Promise<void>;
+  /** Removes a payment from the offline queue. */
   removeQueuedPayment: (id: string) => Promise<void>;
+  /** Updates a preorder record in the store. */
   updatePreorder: (preorder: PreorderRecord) => void;
+  /** Adds a new cash event to the store. */
   addCashEvent: (event: CashEventRecord) => void;
+  /** Applies the effects of a sale that was completed on another terminal. */
   applyRemoteSale: (sale: SaleRecord) => void;
 };
 
@@ -214,6 +247,13 @@ const mergePaymentPreferences = (
   return ordered;
 };
 
+/**
+ * Creates and configures the Zustand store for the Point of Sale application.
+ * This store manages the entire state of the POS, including the product catalog,
+ * shopping cart, payment processing, offline functionality, and real-time updates.
+ *
+ * @returns {object} The Zustand store instance.
+ */
 export const usePosStore = create<PosStore>((set, get) => {
   const persistCart = async (cart: CartItem[]) => {
     const { catalog, terminalId } = get();

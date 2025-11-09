@@ -1,3 +1,6 @@
+/**
+ * Represents information about a fiscal tenant.
+ */
 export type TenantInfo = {
   id: string;
   name: string;
@@ -6,6 +9,9 @@ export type TenantInfo = {
   fiskalyClientId: string;
 };
 
+/**
+ * Represents information about a Technical Security System (TSS).
+ */
 export type TssInfo = {
   id: string;
   serialNumber?: string;
@@ -13,17 +19,26 @@ export type TssInfo = {
   state?: string;
 };
 
+/**
+ * Represents information about a cash register.
+ */
 export type CashRegisterInfo = {
   id: string;
   label?: string;
 };
 
+/**
+ * Represents the complete fiscal context, including tenant, TSS, and cash register information.
+ */
 export type FiscalContext = {
   tenant: TenantInfo;
   tss: TssInfo;
   cashRegister: CashRegisterInfo;
 };
 
+/**
+ * Represents the request payload for starting a Fiskaly transaction.
+ */
 export type FiskalyTransactionStartRequest = {
   type: 'RECEIPT';
   client_id: string;
@@ -32,10 +47,16 @@ export type FiskalyTransactionStartRequest = {
   schema?: Record<string, unknown>;
 };
 
+/**
+ * Represents the request payload for updating a Fiskaly transaction.
+ */
 export type FiskalyTransactionUpdateRequest = {
   schema: Record<string, unknown>;
 };
 
+/**
+ * Represents the request payload for finishing a Fiskaly transaction.
+ */
 export type FiskalyTransactionFinishRequest = {
   signature?: {
     process_data: string;
@@ -43,6 +64,9 @@ export type FiskalyTransactionFinishRequest = {
   };
 };
 
+/**
+ * Represents the response from a Fiskaly transaction request.
+ */
 export type FiskalyTransactionResponse = {
   id: string;
   tss_id: string;
