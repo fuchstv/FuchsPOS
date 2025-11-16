@@ -19,6 +19,158 @@ const currencyFormatter = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 4,
 });
 
+type ManualParsedItem = {
+  sku: string;
+  name?: string;
+  quantity: number;
+  unitprice?: number;
+  lotnumber?: string;
+  expirationdate?: string;
+  storagelocationcode?: string;
+  unit?: string;
+};
+
+type ManualParseResult = {
+  items: ManualParsedItem[];
+  errors: string[];
+};
+
+const manualHeaderMap: Record<string, keyof ManualParsedItem> = {
+  artikelnummer: 'sku',
+  articlenumber: 'sku',
+  artikelnr: 'sku',
+  ean: 'sku',
+  gtin: 'sku',
+  product: 'name',
+  produkt: 'name',
+  produktname: 'name',
+  name: 'name',
+  description: 'name',
+  bezeichnung: 'name',
+  quantity: 'quantity',
+  menge: 'quantity',
+  qty: 'quantity',
+  anzahl: 'quantity',
+  unit: 'unit',
+  einheit: 'unit',
+  unitprice: 'unitprice',
+  einstandspreis: 'unitprice',
+  price: 'unitprice',
+  preis: 'unitprice',
+  netprice: 'unitprice',
+  bruttopreis: 'unitprice',
+  lot: 'lotnumber',
+  lotnumber: 'lotnumber',
+  chargennummer: 'lotnumber',
+  charge: 'lotnumber',
+  batch: 'lotnumber',
+  expirationdate: 'expirationdate',
+  bestbefore: 'expirationdate',
+  mindesthaltbarkeitsdatum: 'expirationdate',
+  mhd: 'expirationdate',
+  storagelocationcode: 'storagelocationcode',
+  location: 'storagelocationcode',
+  lagerort: 'storagelocationcode',
+  bin: 'storagelocationcode',
+};
+
+function detectManualDelimiter(lines: string[]) {
+  if (lines.some(line => line.includes('\t'))) return '\t';
+  if (lines.some(line => line.includes(';'))) return ';';
+  if (lines.some(line => line.includes(','))) return ',';
+  return ';';
+}
+
+function parseDecimalNumber(value: string | undefined) {
+  if (!value) return null;
+  const normalized = value.replace(/\s/g, '').replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseManualEntries(text: string): ManualParseResult {
+  const structuredLines = text
+    .split(/\r?\n/)
+    .map((line, index) => ({ content: line.trim(), lineNumber: index + 1 }))
+    .filter(line => line.content.length > 0);
+
+  if (!structuredLines.length) {
+    return { items: [], errors: [] };
+  }
+
+  const delimiter = detectManualDelimiter(structuredLines.map(line => line.content));
+
+  const splitLine = (line: string) => line.split(delimiter).map(value => value.trim());
+
+  const headerCandidate = splitLine(structuredLines[0].content).map(column => column.toLowerCase());
+  const defaultHeader: (keyof ManualParsedItem)[] = [
+    'sku',
+    'name',
+    'quantity',
+    'unitprice',
+    'lotnumber',
+    'expirationdate',
+    'storagelocationcode',
+  ];
+  const mappedHeader = headerCandidate.map((column, index) => {
+    const mapped = manualHeaderMap[column];
+    if (mapped) {
+      return mapped;
+    }
+    return defaultHeader[index] ?? defaultHeader[defaultHeader.length - 1];
+  });
+  const headerDetected = headerCandidate.some(
+    column => manualHeaderMap[column] || column === 'sku' || column === 'name' || column === 'quantity',
+  );
+
+  const dataLines = headerDetected ? structuredLines.slice(1) : structuredLines;
+  const effectiveHeader = headerDetected ? mappedHeader : defaultHeader;
+
+  const items: ManualParsedItem[] = [];
+  const errors: string[] = [];
+
+  for (const [index, line] of dataLines.entries()) {
+    const values = splitLine(line.content);
+    if (!values.length) {
+      continue;
+    }
+
+    const record: Partial<Record<keyof ManualParsedItem, string>> = {};
+    values.forEach((value, columnIndex) => {
+      const key = effectiveHeader[columnIndex] ?? effectiveHeader[effectiveHeader.length - 1];
+      record[key] = value;
+    });
+
+    const sku = record.sku;
+    if (!sku) {
+      errors.push(`Zeile ${line.lineNumber}: Keine SKU gefunden.`);
+      continue;
+    }
+
+    const quantityRaw = record.quantity ?? '1';
+    const quantity = parseDecimalNumber(quantityRaw);
+    if (quantity === null) {
+      errors.push(`Zeile ${line.lineNumber}: Ungültige Menge "${quantityRaw}".`);
+      continue;
+    }
+
+    const unitPrice = record.unitprice ? parseDecimalNumber(record.unitprice) ?? undefined : undefined;
+
+    items.push({
+      sku,
+      name: record.name ?? undefined,
+      quantity,
+      unitprice: unitPrice,
+      lotnumber: record.lotnumber ?? undefined,
+      expirationdate: record.expirationdate ?? undefined,
+      storagelocationcode: record.storagelocationcode ?? undefined,
+      unit: record.unit ?? undefined,
+    });
+  }
+
+  return { items, errors };
+}
+
 /**
  * Detects the BNN import format based on a file's extension.
  * @param {string} fileName - The name of the file.
@@ -121,6 +273,7 @@ export default function GoodsReceiptImport() {
   const [reference, setReference] = useState('');
   const [receivedAt, setReceivedAt] = useState('');
   const [notes, setNotes] = useState('');
+  const [manualEntries, setManualEntries] = useState('');
 
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -130,6 +283,10 @@ export default function GoodsReceiptImport() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GoodsReceiptResponse | null>(null);
+
+  const manualParse = useMemo(() => parseManualEntries(manualEntries), [manualEntries]);
+  const manualItemsPreview = manualParse.items.slice(0, 5);
+  const hasManualItems = manualParse.items.length > 0;
 
   const totalQuantity = useMemo(() => {
     if (!result?.items?.length) return null;
@@ -192,18 +349,26 @@ export default function GoodsReceiptImport() {
         setError('Bitte eine Tenant-ID angeben.');
         return;
       }
-      if (!fileContent) {
-        setError('Bitte eine BNN-Datei auswählen oder ablegen.');
+      if (!hasManualItems && !fileContent) {
+        setError('Bitte eine BNN-Datei auswählen oder Artikelzeilen einfügen.');
+        return;
+      }
+
+      if (hasManualItems && manualParse.errors.length) {
+        setError(manualParse.errors[0]);
         return;
       }
 
       setIsSubmitting(true);
       setError(null);
       try {
+        const payloadToSend = hasManualItems ? JSON.stringify({ items: manualParse.items }) : fileContent;
+        const formatToSend: BnnImportFormat = hasManualItems ? 'json' : fileFormat;
+
         const payload = {
           tenantId: tenantId.trim(),
-          format: fileFormat,
-          payload: fileContent,
+          format: formatToSend,
+          payload: payloadToSend,
           supplierName: supplierName.trim() || undefined,
           supplierNumber: supplierNumber.trim() || undefined,
           reference: reference.trim() || undefined,
@@ -240,6 +405,8 @@ export default function GoodsReceiptImport() {
       receivedAt,
       notes,
       selectedFile,
+      manualParse,
+      hasManualItems,
       pushEvent,
     ],
   );
@@ -249,8 +416,8 @@ export default function GoodsReceiptImport() {
       <header>
         <h2 className="text-lg font-semibold text-white">BNN-Wareneingang importieren</h2>
         <p className="text-sm text-slate-400">
-          Ziehen Sie eine BNN-Datei per Drag & Drop hierher oder wählen Sie sie manuell aus, um neue Wareneingänge zu
-          buchen.
+          Ziehen Sie eine BNN-Datei per Drag & Drop hierher oder fügen Sie unten eine Liste von Artikeln ein, um neue
+          Wareneingänge zu buchen.
         </p>
       </header>
 
@@ -313,54 +480,110 @@ export default function GoodsReceiptImport() {
           </label>
         </div>
 
-        <div
-          onDragOver={event => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={event => {
-            event.preventDefault();
-            setDragActive(false);
-          }}
-          onDrop={handleDrop}
-          className={[
-            'flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
-            dragActive ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200' : 'border-slate-800 bg-slate-900/50 text-slate-400',
-          ].join(' ')}
-        >
-          <input
-            type="file"
-            accept=".csv,.json,.xml,.txt"
-            ref={fileInputRef}
-            onChange={event => {
-              const file = event.target.files?.[0];
-              if (file) {
-                handleFile(file);
-              }
+        <div className="space-y-4">
+          <div
+            onDragOver={event => {
+              event.preventDefault();
+              setDragActive(true);
             }}
-            className="hidden"
-          />
-          <p className="text-sm font-medium">BNN-Datei hierher ziehen oder klicken, um eine Datei zu wählen.</p>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="mt-3 rounded-md border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200"
+            onDragLeave={event => {
+              event.preventDefault();
+              setDragActive(false);
+            }}
+            onDrop={handleDrop}
+            className={[
+              'flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
+              dragActive ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200' : 'border-slate-800 bg-slate-900/50 text-slate-400',
+            ].join(' ')}
           >
-            Datei auswählen
-          </button>
-          {selectedFile && (
-            <div className="mt-4 text-xs text-slate-300">
-              <p className="font-medium text-slate-200">{selectedFile.name}</p>
-              <p>Format: {fileFormat.toUpperCase()}</p>
-              <button
-                type="button"
-                onClick={resetFileSelection}
-                className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-rose-300 hover:text-rose-200"
-              >
-                Entfernen
-              </button>
-            </div>
-          )}
+            <input
+              type="file"
+              accept=".csv,.json,.xml,.txt"
+              ref={fileInputRef}
+              onChange={event => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  handleFile(file);
+                }
+              }}
+              className="hidden"
+            />
+            <p className="text-sm font-medium">BNN-Datei hierher ziehen oder klicken, um eine Datei zu wählen.</p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-3 rounded-md border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200"
+            >
+              Datei auswählen
+            </button>
+            {selectedFile && (
+              <div className="mt-4 text-xs text-slate-300">
+                <p className="font-medium text-slate-200">{selectedFile.name}</p>
+                <p>Format: {fileFormat.toUpperCase()}</p>
+                <button
+                  type="button"
+                  onClick={resetFileSelection}
+                  className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-rose-300 hover:text-rose-200"
+                >
+                  Entfernen
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-200">
+            <label className="flex flex-col gap-2">
+              <span className="font-medium text-slate-300">Oder Artikelzeilen einfügen</span>
+              <textarea
+                value={manualEntries}
+                onChange={event => setManualEntries(event.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder={'SKU;Name;Menge;Einstandspreis\n12345;Mandeln 1kg;12;8,50'}
+              />
+            </label>
+            <p className="mt-2 text-xs text-slate-400">
+              Unterstützt Semikolon, Tab oder Komma als Trennzeichen. Optional mit Spaltenüberschrift (z. B. SKU;Name;Menge;Preis;MHD;Lagerort).
+            </p>
+            {hasManualItems ? (
+              <p className="mt-2 text-xs text-emerald-200">{manualParse.items.length} Artikel erkannt. Beim Import hat diese Liste Vorrang vor der Datei.</p>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">Jede Zeile sollte mindestens eine SKU enthalten. Menge und Preis sind optional.</p>
+            )}
+            {manualParse.errors.length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-rose-300">
+                {manualParse.errors.slice(0, 3).map(message => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            ) : null}
+            {manualItemsPreview.length ? (
+              <div className="mt-3 overflow-x-auto rounded-md border border-slate-800">
+                <table className="min-w-full divide-y divide-slate-800 text-xs">
+                  <thead className="bg-slate-900/40 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">SKU</th>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-right font-medium">Menge</th>
+                      <th className="px-3 py-2 text-right font-medium">Preis</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {manualItemsPreview.map((item, index) => (
+                      <tr key={`${item.sku}-${index}`} className="bg-slate-950/40">
+                        <td className="px-3 py-2 font-mono text-[11px] text-slate-200">{item.sku}</td>
+                        <td className="px-3 py-2 text-slate-200">{item.name ?? '—'}</td>
+                        <td className="px-3 py-2 text-right text-slate-100">{normalizeDecimal(String(item.quantity))}</td>
+                        <td className="px-3 py-2 text-right text-slate-100">
+                          {item.unitprice !== undefined ? currencyFormatter.format(item.unitprice) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {error && <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
