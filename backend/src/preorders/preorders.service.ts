@@ -92,9 +92,9 @@ export class PreordersService {
    * Lists all active pre-orders (status ORDERED or READY).
    * @returns A promise that resolves to an array of active pre-order payloads.
    */
-  async listActivePreorders(): Promise<PreorderPayload[]> {
+  async listActivePreorders(tenantId: string): Promise<PreorderPayload[]> {
     const preorders = await this.prisma.preorder.findMany({
-      where: { status: { in: [PreorderStatus.ORDERED, PreorderStatus.READY] } },
+      where: { tenantId, status: { in: [PreorderStatus.ORDERED, PreorderStatus.READY] } },
       include: {
         sale: { select: { id: true, receiptNo: true } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
@@ -113,8 +113,14 @@ export class PreordersService {
    * @param limit - The maximum number of events to return.
    * @returns A promise that resolves to an array of cash event payloads.
    */
-  async listRecentCashEvents(limit = 25): Promise<CashEventPayload[]> {
+  async listRecentCashEvents(tenantId: string, limit = 25): Promise<CashEventPayload[]> {
     const events = await this.prisma.cashEvent.findMany({
+      where: {
+        OR: [
+          { preorder: { tenantId } },
+          { sale: { preorder: { tenantId } } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: {

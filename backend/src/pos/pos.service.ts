@@ -298,8 +298,8 @@ export class PosService {
    * Lists all active pre-orders.
    * @returns A promise that resolves to an array of active pre-orders.
    */
-  async listPreorders() {
-    return this.preorders.listActivePreorders();
+  async listPreorders(tenantId: string) {
+    return this.preorders.listActivePreorders(tenantId);
   }
 
   /**
@@ -307,8 +307,8 @@ export class PosService {
    * @param limit - The maximum number of events to return.
    * @returns A promise that resolves to an array of cash events.
    */
-  async listCashEvents(limit = 25) {
-    return this.preorders.listRecentCashEvents(limit);
+  async listCashEvents(tenantId: string, limit = 25) {
+    return this.preorders.listRecentCashEvents(tenantId, limit);
   }
 
   /**
