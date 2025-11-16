@@ -58,6 +58,30 @@ export class PosService {
   }
 
   /**
+   * Retrieves the cached cart for a given terminal.
+   *
+   * @param terminalId - The ID of the terminal requesting the cart.
+   * @returns The cached cart payload including metadata.
+   */
+  async getCart(terminalId: string) {
+    const key = `pos:cart:${terminalId}`;
+    const cart = await this.redis.getJson<(SyncCartDto & { updatedAt: string }) | null>(key);
+    const ttl = await this.redis.getClient().ttl(key);
+
+    if (!cart || ttl === -2) {
+      throw new NotFoundException('Für dieses Terminal ist kein Warenkorb gespeichert.');
+    }
+
+    if (ttl === 0) {
+      throw new BadRequestException('Der gespeicherte Warenkorb ist abgelaufen. Bitte synchronisiere erneut.');
+    }
+
+    const ttlSeconds = ttl >= 0 ? ttl : null;
+
+    return { cart, ttlSeconds };
+  }
+
+  /**
    * Simulates a payment transaction without performing actual fiscalization or hardware interactions.
    * The simulated sale is temporarily cached in Redis.
    *

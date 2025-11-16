@@ -63,6 +63,24 @@ const defaultPaymentMethods: PaymentMethodDefinition[] = [
   },
 ];
 
+type RemoteCartResponse = {
+  cart: {
+    terminalId: string;
+    items: Array<{
+      id: string;
+      name: string;
+      unitPrice: number;
+      quantity: number;
+      category: CatalogItem['category'];
+    }>;
+    total: number;
+    tax?: number;
+    currency: string;
+    updatedAt: string;
+  };
+  ttlSeconds: number | null;
+};
+
 /**
  * Defines the input for processing a payment.
  */
@@ -459,6 +477,23 @@ export const usePosStore = create<PosStore>((set, get) => {
 
       const terminalId = await ensureTerminalId();
 
+      let restoredCartItems = storedCart?.items ?? [];
+      try {
+        const response = await api.get<RemoteCartResponse>('/pos/cart', { params: { terminalId } });
+        const remoteItems = response.data?.cart?.items ?? [];
+        restoredCartItems = remoteItems.map(item => ({ id: item.id, quantity: item.quantity }));
+        const totals = calculateCartTotals(restoredCartItems, catalog);
+        await persistCartLocally(restoredCartItems, totals);
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          // Kein gespeicherter Warenkorb vorhanden.
+        } else if (error?.response) {
+          console.warn('Gespeicherten Warenkorb konnte nicht geladen werden.', error);
+        } else {
+          console.warn('Gespeicherter Warenkorb konnte aufgrund fehlender Verbindung nicht geladen werden.', error);
+        }
+      }
+
       let preorders: PreorderRecord[] = [];
       let cashEvents: CashEventRecord[] = [];
       let latestSale: SaleResponse['sale'] | undefined;
@@ -486,7 +521,7 @@ export const usePosStore = create<PosStore>((set, get) => {
 
       set({
         catalog,
-        cart: storedCart?.items ?? [],
+        cart: restoredCartItems,
         queuedPayments: [...queuedPayments].sort(
           (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
         ),

@@ -98,6 +98,7 @@ The backend API provides several endpoints for interacting with the POS system. 
 -   `GET /api/health`: Returns the health status of the backend and its dependencies (database and cache).
 -   `GET /api/pos/catalog`: Retrieves the product catalog.
 -   `POST /api/pos/payments`: Processes a new payment.
+-   `GET /api/pos/cart?terminalId=TERMINAL`: Returns the last persisted cart for the given terminal if it is still valid.
 -   `GET /api/pos/payments/latest`: Returns the most recent sale so a terminal can restore its context after a reload.
 -   `POST /api/pos/cart/sync`: Syncs the local cart with the server.
 -   `GET /api/reporting/dashboard`: Retrieves data for the reporting dashboard.
