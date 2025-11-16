@@ -229,6 +229,7 @@ export class PreordersService {
           scheduledPickup,
           items: (order.items as unknown as Prisma.InputJsonValue) ?? Prisma.JsonNull,
           woltOrderId: woltOrder.id,
+          tenantId: order.tenantId ?? existing.tenantId ?? null,
         },
       });
 
