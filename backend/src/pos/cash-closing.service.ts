@@ -10,6 +10,8 @@ type CashClosingSummary = {
   paymentMethods: Record<string, PaymentMethodSummary>;
 };
 
+const FINALIZED_SALE_STATUSES: Prisma.SaleStatus[] = ['SUCCESS', 'REFUND', 'REFUNDED'];
+
 export type CashClosingPayload = {
   id: number;
   type: CashClosingType;
@@ -40,7 +42,7 @@ export class CashClosingService {
 
     const sales = await this.prisma.sale.findMany({
       where: {
-        status: 'SUCCESS',
+        status: { in: FINALIZED_SALE_STATUSES },
         createdAt: {
           gt: fromDate,
           lte: toDate,

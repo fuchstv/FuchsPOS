@@ -18,5 +18,6 @@ import { CashClosingService } from './cash-closing.service';
   imports: [HardwareModule, MailerModule, FiscalModule, PreordersModule, RealtimeModule],
   controllers: [PosController],
   providers: [PosService, CashClosingService],
+  exports: [PosService, CashClosingService],
 })
 export class PosModule {}
