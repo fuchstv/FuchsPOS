@@ -1,9 +1,12 @@
-import { Body, Controller, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { ImportBnnDocumentDto } from './dto/import-bnn-document.dto';
 import { CreateInventoryCountDto } from './dto/create-inventory-count.dto';
 import { FinalizeInventoryCountDto } from './dto/finalize-inventory-count.dto';
 import { RecordPriceChangeDto } from './dto/record-price-change.dto';
+import { ImportProductsDto } from './dto/import-products.dto';
+import { ListProductsDto } from './dto/list-products.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 /**
  * Controller for managing inventory-related operations.
@@ -54,5 +57,33 @@ export class InventoryController {
   @Post('price-changes')
   recordPriceChange(@Body() dto: RecordPriceChangeDto) {
     return this.inventoryService.recordPriceChange(dto);
+  }
+
+  /**
+   * Lists products for a tenant with optional filtering.
+   * @param query - Parameters for pagination and search.
+   */
+  @Get('products')
+  listProducts(@Query() query: ListProductsDto) {
+    return this.inventoryService.listProducts(query);
+  }
+
+  /**
+   * Imports or updates products from a manual catalog payload.
+   * @param dto - The data transfer object containing the products to import.
+   */
+  @Post('products/import')
+  importProducts(@Body() dto: ImportProductsDto) {
+    return this.inventoryService.importProducts(dto);
+  }
+
+  /**
+   * Updates a single product.
+   * @param id - The product ID.
+   * @param dto - The new product data.
+   */
+  @Patch('products/:id')
+  updateProduct(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProductDto) {
+    return this.inventoryService.updateProduct(id, dto);
   }
 }

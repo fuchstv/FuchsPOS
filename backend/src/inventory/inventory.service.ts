@@ -6,6 +6,9 @@ import { CreateInventoryCountDto } from './dto/create-inventory-count.dto';
 import { FinalizeInventoryCountDto } from './dto/finalize-inventory-count.dto';
 import { RecordPriceChangeDto } from './dto/record-price-change.dto';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
+import { ImportProductsDto } from './dto/import-products.dto';
+import { ListProductsDto } from './dto/list-products.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 type ParsedBnnItem = {
   sku: string;
@@ -18,6 +21,8 @@ type ParsedBnnItem = {
   unit?: string;
   metadata?: Record<string, any>;
 };
+
+type ProductWithSupplier = Prisma.ProductGetPayload<{ include: { supplier: true } }>;
 
 /**
  * Service for managing inventory, including goods receipts, inventory counts, and price changes.
@@ -404,6 +409,190 @@ export class InventoryService {
     this.realtime.broadcast('inventory.price-change.recorded', response);
 
     return response;
+  }
+
+  /**
+   * Lists products for a tenant with optional search and pagination.
+   */
+  async listProducts(dto: ListProductsDto) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: dto.tenantId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${dto.tenantId} nicht gefunden.`);
+    }
+
+    const take = Math.min(Math.max(dto.take ?? 50, 1), 200);
+    const skip = Math.max(dto.skip ?? 0, 0);
+
+    const where: Prisma.ProductWhereInput = {
+      tenantId: dto.tenantId,
+    };
+
+    if (dto.search?.trim()) {
+      const searchTerm = dto.search.trim();
+      where.OR = [
+        { sku: { contains: searchTerm, mode: 'insensitive' } },
+        { name: { contains: searchTerm, mode: 'insensitive' } },
+      ];
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        include: { supplier: true },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    return {
+      total,
+      skip,
+      take,
+      items: items.map((product) => this.mapProduct(product)),
+    };
+  }
+
+  /**
+   * Imports or updates products based on a manual catalog payload.
+   */
+  async importProducts(dto: ImportProductsDto) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: dto.tenantId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${dto.tenantId} nicht gefunden.`);
+    }
+
+    const created: ProductWithSupplier[] = [];
+    const updated: ProductWithSupplier[] = [];
+
+    for (const rawItem of dto.items) {
+      const sku = rawItem.sku.trim();
+      const name = rawItem.name?.trim() || sku;
+      const unit = rawItem.unit?.trim() || 'pcs';
+      const defaultPrice = rawItem.defaultPrice ?? 0;
+
+      const supplier =
+        rawItem.supplierName || rawItem.supplierNumber
+          ? await this.ensureSupplier(dto.tenantId, rawItem.supplierName, rawItem.supplierNumber)
+          : null;
+
+      const existing = await this.prisma.product.findUnique({
+        where: {
+          tenantId_sku: {
+            tenantId: dto.tenantId,
+            sku,
+          },
+        },
+      });
+
+      if (existing) {
+        const product = await this.prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            unit,
+            defaultPrice: this.toDecimal(defaultPrice),
+            ...(supplier ? { supplierId: supplier.id } : {}),
+          },
+          include: { supplier: true },
+        });
+        updated.push(product);
+      } else {
+        const product = await this.prisma.product.create({
+          data: {
+            tenantId: dto.tenantId,
+            sku,
+            name,
+            unit,
+            defaultPrice: this.toDecimal(defaultPrice),
+            supplierId: supplier?.id ?? null,
+          },
+          include: { supplier: true },
+        });
+        created.push(product);
+      }
+    }
+
+    const summary = {
+      created: created.length,
+      updated: updated.length,
+      total: dto.items.length,
+    };
+
+    this.realtime.broadcast('inventory.products.imported', {
+      tenantId: dto.tenantId,
+      summary,
+    });
+
+    return {
+      summary,
+      created: created.map((product) => this.mapProduct(product)),
+      updated: updated.map((product) => this.mapProduct(product)),
+    };
+  }
+
+  /**
+   * Updates a single product for a tenant.
+   */
+  async updateProduct(id: number, dto: UpdateProductDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { supplier: true },
+    });
+
+    if (!product || product.tenantId !== dto.tenantId) {
+      throw new NotFoundException(`Produkt ${id} nicht gefunden.`);
+    }
+
+    const data: Prisma.ProductUncheckedUpdateInput = {};
+
+    if (dto.sku?.trim()) {
+      data.sku = dto.sku.trim();
+    }
+    if (dto.name?.trim()) {
+      data.name = dto.name.trim();
+    }
+    if (dto.unit?.trim()) {
+      data.unit = dto.unit.trim();
+    }
+    if (dto.defaultPrice !== undefined) {
+      data.defaultPrice = this.toDecimal(dto.defaultPrice);
+    }
+
+    if (dto.supplierName || dto.supplierNumber) {
+      const supplier = await this.ensureSupplier(dto.tenantId, dto.supplierName, dto.supplierNumber);
+      data.supplierId = supplier?.id ?? null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return this.mapProduct(product);
+    }
+
+    const updatedProduct = await this.prisma.product.update({
+      where: { id: product.id },
+      data,
+      include: { supplier: true },
+    });
+
+    const mapped = this.mapProduct(updatedProduct);
+
+    this.realtime.broadcast('inventory.product.updated', { product: mapped });
+
+    return mapped;
+  }
+
+  private mapProduct(product: ProductWithSupplier) {
+    return {
+      ...product,
+      supplier: product.supplier
+        ? {
+            id: product.supplier.id,
+            name: product.supplier.name,
+            supplierNumber: (product.supplier as any).supplierNumber ?? product.supplier.bnnSupplierNumber,
+          }
+        : null,
+    };
   }
 
   /**

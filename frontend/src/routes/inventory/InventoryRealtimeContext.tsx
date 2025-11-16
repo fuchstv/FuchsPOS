@@ -8,7 +8,9 @@ export type InventoryRealtimeEventType =
   | 'goods-receipt'
   | 'count-created'
   | 'count-finalized'
-  | 'price-change';
+  | 'price-change'
+  | 'product-import'
+  | 'product-updated';
 
 /**
  * Represents a single real-time event related to inventory management.
@@ -124,6 +126,35 @@ export function InventoryRealtimeProvider({ children }: { children: React.ReactN
             id: buildEventId('price-change'),
             type: 'price-change',
             title: 'Preisänderung verbucht',
+            timestamp: new Date().toISOString(),
+            description: sku ? `SKU ${sku}` : undefined,
+            payload,
+          });
+        },
+      ],
+      [
+        'inventory.products.imported',
+        payload => {
+          pushEvent({
+            id: buildEventId('product-import'),
+            type: 'product-import',
+            title: 'Artikel importiert',
+            timestamp: new Date().toISOString(),
+            description: payload?.summary
+              ? `${payload.summary.created} neu / ${payload.summary.updated} aktualisiert`
+              : undefined,
+            payload,
+          });
+        },
+      ],
+      [
+        'inventory.product.updated',
+        payload => {
+          const sku = payload?.product?.sku;
+          pushEvent({
+            id: buildEventId('product-updated'),
+            type: 'product-updated',
+            title: 'Artikel bearbeitet',
             timestamp: new Date().toISOString(),
             description: sku ? `SKU ${sku}` : undefined,
             payload,
