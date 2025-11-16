@@ -475,9 +475,11 @@ export default function PosDashboard() {
             </div>
           )}
 
-          {paymentState === 'success' && latestSale && (
+          {latestSale && (
             <div className="space-y-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-              <p className="font-semibold text-emerald-100">Beleg gespeichert</p>
+              <p className="font-semibold text-emerald-100">
+                {paymentState === 'success' ? 'Beleg gespeichert' : 'Letzter erfolgreicher Verkauf'}
+              </p>
               <p>Bonnummer: {latestSale.receiptNo}</p>
               <p>Gesamt: {currency.format(latestSale.total)}</p>
               {latestSale.fiscalization && (

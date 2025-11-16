@@ -52,6 +52,14 @@ export class PosController {
   }
 
   /**
+   * Returns the most recent sale to allow terminals to resume after a reload.
+   */
+  @Get('payments/latest')
+  getLatestSale() {
+    return this.posService.getLatestSale();
+  }
+
+  /**
    * Lists all open pre-orders.
    * @returns A promise that resolves to a list of pre-orders.
    */
