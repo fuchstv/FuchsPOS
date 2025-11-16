@@ -138,7 +138,7 @@ function parseManualEntries(text: string): ManualParseResult {
   const items: ManualParsedItem[] = [];
   const errors: string[] = [];
 
-  for (const [index, line] of dataLines.entries()) {
+  for (const line of dataLines) {
     const values = splitLine(line.content);
     if (!values.length) {
       continue;

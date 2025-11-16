@@ -47,7 +47,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
    * @param {React.ErrorInfo} info - An object with a `componentStack` key containing information about which component threw the error.
    */
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
+
     console.error('Unhandled application error', error, info);
   }
 

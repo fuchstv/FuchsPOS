@@ -109,7 +109,7 @@ function parseManualProductEntries(text: string): ManualParseResult {
   const items: EditableImportRow[] = [];
   const errors: string[] = [];
 
-  for (const [index, line] of dataLines.entries()) {
+  for (const line of dataLines) {
     const values = splitLine(line.content);
     if (!values.length) continue;
 
@@ -178,7 +178,11 @@ function normalizeEanInput(value: string) {
 }
 
 function extractSupplierNumber(product: ProductRecord) {
-  return product.supplier?.supplierNumber ?? (product.supplier as any)?.bnnSupplierNumber ?? null;
+  const supplier = product.supplier as unknown;
+  if (supplier && typeof supplier === 'object' && 'bnnSupplierNumber' in supplier) {
+    return product.supplier?.supplierNumber ?? (supplier as { bnnSupplierNumber: string }).bnnSupplierNumber ?? null;
+  }
+  return product.supplier?.supplierNumber ?? null;
 }
 
 export default function ProductManagement() {

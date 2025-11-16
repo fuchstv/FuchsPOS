@@ -17,7 +17,7 @@ type ExportListFilters = ReportingFilters & {
 
 const API_BASE = (api.defaults.baseURL ?? '').replace(/\/$/, '');
 
-const buildParams = (filters: Partial<ReportingFilters> & Record<string, any>) => {
+const buildParams = (filters: Partial<ReportingFilters> & Record<string, unknown>) => {
   const params: Record<string, string> = {};
 
   if (filters.startDate) {

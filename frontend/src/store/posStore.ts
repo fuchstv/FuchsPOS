@@ -338,10 +338,11 @@ export const usePosStore = create<PosStore>((set, get) => {
     try {
       await api.post('/pos/cart/sync', buildCartPayload(cart, catalog, totals, terminalId));
       set({ isOffline: false });
-    } catch (error: any) {
-      if (!error?.response) {
-        set({ isOffline: true });
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        console.warn('Warenkorb konnte nicht synchronisiert werden', error);
       } else {
+        set({ isOffline: true });
         console.warn('Warenkorb konnte nicht synchronisiert werden', error);
       }
     }
@@ -490,11 +491,22 @@ export const usePosStore = create<PosStore>((set, get) => {
         });
 
         await persistCart([]);
-      } catch (error: any) {
+      } catch (error: unknown) {
         const message =
-          error?.response?.data?.message ?? error?.message ?? 'Zahlung konnte nicht verarbeitet werden.';
+          error && typeof error === 'object' && 'response' in error && error.response && typeof error.response === 'object' && 'data' in error.response && error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data && typeof error.response.data.message === 'string'
+            ? error.response.data.message
+            : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+            ? error.message
+            : 'Zahlung konnte nicht verarbeitet werden.';
 
-        if (!error?.response) {
+        if (error && typeof error === 'object' && 'response' in error) {
+          const status = (error.response as { status?: number })?.status;
+          const conflictMessage =
+            status === 409
+              ? `${message} Bitte prüfe doppelte Belege oder Markiere die Zahlung manuell als geklärt.`
+              : message;
+          set({ paymentState: 'error', error: conflictMessage });
+        } else {
           const queued = await enqueuePayment(payload);
           set(state => ({
             paymentState: 'queued',
@@ -509,13 +521,6 @@ export const usePosStore = create<PosStore>((set, get) => {
             lastAttemptAt: nowIso,
           });
           await persistCart([]);
-        } else {
-          const status = error.response?.status;
-          const conflictMessage =
-            status === 409
-              ? `${message} Bitte prüfe doppelte Belege oder Markiere die Zahlung manuell als geklärt.`
-              : message;
-          set({ paymentState: 'error', error: conflictMessage });
         }
       }
     },
@@ -545,11 +550,14 @@ export const usePosStore = create<PosStore>((set, get) => {
         restoredCartItems = remoteItems.map(item => ({ id: item.id, quantity: item.quantity }));
         const totals = calculateCartTotals(restoredCartItems, catalog);
         await persistCartLocally(restoredCartItems, totals);
-      } catch (error: any) {
-        if (error?.response?.status === 404) {
-          // Kein gespeicherter Warenkorb vorhanden.
-        } else if (error?.response) {
-          console.warn('Gespeicherten Warenkorb konnte nicht geladen werden.', error);
+      } catch (error: unknown) {
+        if (error && typeof error === 'object' && 'response' in error) {
+          const status = (error.response as { status?: number })?.status;
+          if (status === 404) {
+            // Kein gespeicherter Warenkorb vorhanden.
+          } else {
+            console.warn('Gespeicherten Warenkorb konnte nicht geladen werden.', error);
+          }
         } else {
           console.warn('Gespeicherter Warenkorb konnte aufgrund fehlender Verbindung nicht geladen werden.', error);
         }
@@ -574,7 +582,7 @@ export const usePosStore = create<PosStore>((set, get) => {
           ]);
           preorders = preorderResponse.data ?? [];
           cashEvents = cashEventResponse.data ?? [];
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.warn('Vorbestellungen oder Kassenevents konnten nicht synchronisiert werden.', error);
         }
       } else {
@@ -584,9 +592,14 @@ export const usePosStore = create<PosStore>((set, get) => {
       try {
         const latestSaleResponse = await api.get<SaleResponse>('/pos/payments/latest');
         latestSale = latestSaleResponse.data?.sale;
-      } catch (error: any) {
-        if (error?.response?.status === 404) {
-          console.info('Noch kein Verkauf gespeichert. Überspringe Initialbeleg.');
+      } catch (error: unknown) {
+        if (error && typeof error === 'object' && 'response' in error) {
+          const status = (error.response as { status?: number })?.status;
+          if (status === 404) {
+            console.info('Noch kein Verkauf gespeichert. Überspringe Initialbeleg.');
+          } else {
+            console.warn('Letzter Verkauf konnte nicht geladen werden.', error);
+          }
         } else {
           console.warn('Letzter Verkauf konnte nicht geladen werden.', error);
         }
@@ -680,10 +693,63 @@ export const usePosStore = create<PosStore>((set, get) => {
               preorders: effects.preorders,
             };
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           const nowIso = new Date().toISOString();
 
-          if (!error?.response) {
+          if (error && typeof error === 'object' && 'response' in error) {
+            const status = (error.response as { status?: number })?.status;
+            const message =
+              (error.response as { data?: { message?: string } })?.data?.message ??
+              (error as { message?: string })?.message ??
+              'Zahlung konnte nicht synchronisiert werden.';
+
+            if (status === 409) {
+              const conflict = {
+                type: 'duplicate-sale' as const,
+                message,
+                detectedAt: nowIso,
+                saleId: (error.response as { data?: { sale?: { id?: string } } })?.data?.sale?.id,
+                receiptNo: (error.response as { data?: { sale?: { receiptNo?: string } } })?.data?.sale
+                  ?.receiptNo,
+              };
+              await applyQueuedPaymentPatch(payment.id, {
+                status: 'conflict',
+                error: message,
+                conflict,
+                lastAttemptAt: nowIso,
+                nextRetryAt: undefined,
+              });
+              set({ paymentState: 'error', error: 'Konflikt beim Übertragen einer Zahlung erkannt.' });
+              continue;
+            }
+
+            if (status && (status >= 500 || status === 429)) {
+              const retryCount = payment.retryCount + 1;
+              const nextRetryAt = computeNextRetryAt(retryCount);
+              await applyQueuedPaymentPatch(payment.id, {
+                status: 'pending',
+                error: message,
+                retryCount,
+                nextRetryAt,
+                lastAttemptAt: nowIso,
+              });
+              set({ paymentState: 'queued', error: message });
+              continue;
+            }
+
+            await applyQueuedPaymentPatch(payment.id, {
+              status: 'failed',
+              error: message,
+              lastAttemptAt: nowIso,
+              nextRetryAt: undefined,
+            });
+
+            set(current => ({
+              queuedPayments: current.queuedPayments,
+              paymentState: 'error',
+              error: message,
+            }));
+          } else {
             const retryCount = payment.retryCount + 1;
             const nextRetryAt = computeNextRetryAt(retryCount);
             await applyQueuedPaymentPatch(payment.id, {
@@ -696,56 +762,6 @@ export const usePosStore = create<PosStore>((set, get) => {
             set({ isOffline: true, paymentState: 'queued' });
             break;
           }
-
-          const status = error.response?.status;
-          const message =
-            error?.response?.data?.message ?? error?.message ?? 'Zahlung konnte nicht synchronisiert werden.';
-
-          if (status === 409) {
-            const conflict = {
-              type: 'duplicate-sale' as const,
-              message,
-              detectedAt: nowIso,
-              saleId: error.response?.data?.sale?.id,
-              receiptNo: error.response?.data?.sale?.receiptNo,
-            };
-            await applyQueuedPaymentPatch(payment.id, {
-              status: 'conflict',
-              error: message,
-              conflict,
-              lastAttemptAt: nowIso,
-              nextRetryAt: undefined,
-            });
-            set({ paymentState: 'error', error: 'Konflikt beim Übertragen einer Zahlung erkannt.' });
-            continue;
-          }
-
-          if (status && (status >= 500 || status === 429)) {
-            const retryCount = payment.retryCount + 1;
-            const nextRetryAt = computeNextRetryAt(retryCount);
-            await applyQueuedPaymentPatch(payment.id, {
-              status: 'pending',
-              error: message,
-              retryCount,
-              nextRetryAt,
-              lastAttemptAt: nowIso,
-            });
-            set({ paymentState: 'queued', error: message });
-            continue;
-          }
-
-          await applyQueuedPaymentPatch(payment.id, {
-            status: 'failed',
-            error: message,
-            lastAttemptAt: nowIso,
-            nextRetryAt: undefined,
-          });
-
-          set(current => ({
-            queuedPayments: current.queuedPayments,
-            paymentState: 'error',
-            error: message,
-          }));
         }
       }
     },

@@ -16,3 +16,6 @@ backend/prisma/dev.db
 
 # Docker
 *.pid
+
+# Test results
+frontend/test-results/
