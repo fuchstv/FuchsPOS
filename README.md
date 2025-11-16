@@ -9,6 +9,7 @@ FuchsPOS is a modern, full-stack monorepo that provides a comprehensive Point-of
 - **Offline-First Functionality**: The frontend is designed to work offline, queuing payments and syncing with the backend when a connection is available.
 - **Real-time Updates**: The POS dashboard updates in real-time with new sales, preorders, and cash events from other terminals.
 - **Digitale Belege**: Einheitliche Renderer erzeugen HTML- sowie PDF-Belege, die direkt aus dem POS heruntergeladen werden können.
+- **Barcode-fähiger Produktkatalog**: Produkte können neben SKU nun auch eine optionale EAN/GTIN erhalten und werden in allen Import-, Such- und POS-Flows automatisch darüber gefunden.
 - **Comprehensive Reporting**: A dedicated reporting dashboard provides insights into sales, employee performance, and product categories.
 - **Developer-Friendly**: The entire stack can be run locally with a single `docker compose up` command, and the repository is structured to be easy to navigate and contribute to.
 
@@ -91,6 +92,17 @@ After making changes to the Prisma schema (`backend/prisma/schema.prisma`), you 
 ```bash
 npm run prisma:generate
 ```
+
+## 📦 Barcode / EAN Workflows
+
+FuchsPOS unterstützt vollständig getrennte SKU- und EAN-Verwaltung:
+
+- Das Prisma-Modell `Product` besitzt ein optionales `ean`-Feld inklusive Tenant-bezogenem Unique-Index (`backend/prisma/schema.prisma`).
+- Backend-DTOs, Importe sowie der `InventoryService` normalisieren eingegebene Codes, schreiben sie ins neue Feld und verwenden sie bei Lookups (z. B. CSV-Importe, Lagerkorrekturen, Wareneingänge).
+- Die Verwaltungs- und Import-Formulare im Frontend zeigen ein eigenes EAN-Eingabefeld an, validieren GTINs beim Upload und listen den Wert in Tabellen auf.
+- Der POS-Store priorisiert beim Scannen von Barcodes den EAN-Abgleich und fällt erst anschließend auf SKUs zurück; Seeds und Mock-Katalogeinträge enthalten entsprechende Codes.
+
+Damit lassen sich Hardware-Scanner ohne zusätzliche Konfiguration verwenden, während bestehende SKU-basierte Abläufe unverändert bleiben.
 
 ## API Endpoints
 

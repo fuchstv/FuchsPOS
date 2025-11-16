@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -16,6 +17,11 @@ export class ImportProductItemDto {
   @IsNotEmpty()
   @MaxLength(80)
   sku!: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]{8,14}$/)
+  ean?: string | null;
 
   @IsString()
   @IsNotEmpty()

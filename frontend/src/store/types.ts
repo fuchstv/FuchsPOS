@@ -12,6 +12,8 @@ export type CatalogItem = {
   price: number;
   /** The category the product belongs to. */
   category: 'Beverage' | 'Food' | 'Merch';
+  /** Optional EAN/GTIN for barcode scans. */
+  ean?: string | null;
 };
 
 /**

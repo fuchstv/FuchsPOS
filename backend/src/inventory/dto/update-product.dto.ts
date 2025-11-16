@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 
 export class UpdateProductDto {
   @IsString()
@@ -9,6 +9,11 @@ export class UpdateProductDto {
   @IsString()
   @MaxLength(80)
   sku?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]{8,14}$/)
+  ean?: string | null;
 
   @IsOptional()
   @IsString()

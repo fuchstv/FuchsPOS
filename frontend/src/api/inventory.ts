@@ -59,6 +59,7 @@ export interface ProductSummary {
   sku: string;
   name: string;
   unit?: string | null;
+  ean?: string | null;
 }
 
 /**
@@ -109,6 +110,7 @@ export interface ProductRecord {
   id: number;
   tenantId: string;
   sku: string;
+  ean: string | null;
   name: string;
   unit: string;
   defaultPrice: string;
@@ -139,6 +141,7 @@ export async function listProducts(params: ListProductsParams) {
 
 export interface ImportProductInput {
   sku: string;
+  ean?: string | null;
   name: string;
   unit?: string;
   defaultPrice?: number;
@@ -169,6 +172,7 @@ export async function importProductCatalog(payload: ImportProductCatalogPayload)
 export interface UpdateProductPayload {
   tenantId: string;
   sku?: string;
+  ean?: string | null;
   name?: string;
   unit?: string;
   defaultPrice?: number;
