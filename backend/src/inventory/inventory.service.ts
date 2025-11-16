@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryCountDto } from './dto/create-inventory-count.dto';
 import { FinalizeInventoryCountDto } from './dto/finalize-inventory-count.dto';
 import { RecordPriceChangeDto } from './dto/record-price-change.dto';
+import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 
 type ParsedBnnItem = {
   sku: string;
@@ -23,7 +24,10 @@ type ParsedBnnItem = {
  */
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: PosRealtimeGateway,
+  ) {}
 
   /**
    * Imports a goods receipt from a BNN (Bundesverband Naturkost Naturwaren) document.
@@ -116,7 +120,7 @@ export class InventoryService {
       },
     });
 
-    return this.prisma.goodsReceipt.findUnique({
+    const goodsReceiptWithRelations = await this.prisma.goodsReceipt.findUnique({
       where: { id: goodsReceipt.id },
       include: {
         supplier: true,
@@ -129,6 +133,14 @@ export class InventoryService {
         importSources: true,
       },
     });
+
+    if (goodsReceiptWithRelations) {
+      this.realtime.broadcast('inventory.goods-receipt.imported', {
+        goodsReceipt: goodsReceiptWithRelations,
+      });
+    }
+
+    return goodsReceiptWithRelations;
   }
 
   /**
@@ -185,10 +197,16 @@ export class InventoryService {
       createdItems.push(countItem);
     }
 
-    return {
+    const result = {
       ...inventoryCount,
       items: createdItems,
     };
+
+    this.realtime.broadcast('inventory.count.created', {
+      inventoryCount: result,
+    });
+
+    return result;
   }
 
   /**
@@ -308,11 +326,17 @@ export class InventoryService {
       },
     });
 
-    return {
+    const response = {
       ...completed,
       adjustments: [...inventoryCount.adjustments, ...createdAdjustments],
       updatedItems,
     };
+
+    this.realtime.broadcast('inventory.count.finalized', {
+      inventoryCount: response,
+    });
+
+    return response;
   }
 
   /**
@@ -364,16 +388,22 @@ export class InventoryService {
       },
     });
 
-    return {
-      product: await this.prisma.product.findUnique({
-        where: { id: product.id },
-        include: {
-          supplier: true,
-        },
-      }),
+    const enrichedProduct = await this.prisma.product.findUnique({
+      where: { id: product.id },
+      include: {
+        supplier: true,
+      },
+    });
+
+    const response = {
+      product: enrichedProduct,
       priceHistory,
       promotion,
     };
+
+    this.realtime.broadcast('inventory.price-change.recorded', response);
+
+    return response;
   }
 
   /**
