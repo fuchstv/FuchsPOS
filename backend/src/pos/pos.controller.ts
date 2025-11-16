@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { PosService } from './pos.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
@@ -77,6 +78,23 @@ export class PosController {
   @Post('receipts/email')
   sendReceiptByEmail(@Body() dto: EmailReceiptDto) {
     return this.posService.sendReceiptEmail(dto);
+  }
+
+  /**
+   * Streams a receipt document (PDF or HTML) for download.
+   */
+  @Get('receipts/:id/download')
+  async downloadReceipt(
+    @Param('id', ParseIntPipe) saleId: number,
+    @Query('format') format: string | undefined,
+    @Res() res: Response,
+  ) {
+    const normalizedFormat: 'pdf' | 'html' = format?.toLowerCase() === 'html' ? 'html' : 'pdf';
+    const document = await this.posService.getReceiptDocument(saleId, normalizedFormat);
+
+    res.setHeader('Content-Type', document.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${document.filename}"`);
+    res.send(document.buffer);
   }
 
   /**

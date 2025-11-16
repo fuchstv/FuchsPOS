@@ -8,6 +8,7 @@ FuchsPOS is a modern, full-stack monorepo that provides a comprehensive Point-of
 - **Robust Backend**: A powerful NestJS backend with a clear modular architecture, leveraging Prisma for database access and Redis for caching and real-time events.
 - **Offline-First Functionality**: The frontend is designed to work offline, queuing payments and syncing with the backend when a connection is available.
 - **Real-time Updates**: The POS dashboard updates in real-time with new sales, preorders, and cash events from other terminals.
+- **Digitale Belege**: Einheitliche Renderer erzeugen HTML- sowie PDF-Belege, die direkt aus dem POS heruntergeladen werden können.
 - **Comprehensive Reporting**: A dedicated reporting dashboard provides insights into sales, employee performance, and product categories.
 - **Developer-Friendly**: The entire stack can be run locally with a single `docker compose up` command, and the repository is structured to be easy to navigate and contribute to.
 
@@ -100,6 +101,7 @@ The backend API provides several endpoints for interacting with the POS system. 
 -   `POST /api/pos/payments`: Processes a new payment.
 -   `GET /api/pos/cart?terminalId=TERMINAL`: Returns the last persisted cart for the given terminal if it is still valid.
 -   `GET /api/pos/payments/latest`: Returns the most recent sale so a terminal can restore its context after a reload.
+-   `GET /api/pos/receipts/:id/download?format=pdf|html`: Streams the rendered receipt as HTML or PDF for download.
 -   `POST /api/pos/cart/sync`: Syncs the local cart with the server.
 -   `GET /api/reporting/dashboard`: Retrieves data for the reporting dashboard.
 -   `POST /api/reporting/exports`: Requests a new report export.

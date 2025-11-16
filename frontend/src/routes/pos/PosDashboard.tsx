@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/client';
+import { fetchReceiptDocument } from '../../api/pos';
 import { usePosStore } from '../../store/posStore';
 import type { PaymentMethod } from '../../store/types';
 import { usePosRealtime } from '../../realtime/PosRealtimeContext';
@@ -60,6 +61,8 @@ export default function PosDashboard() {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [processingMethod, setProcessingMethod] = useState<PaymentMethod | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [activeDownloadFormat, setActiveDownloadFormat] = useState<'pdf' | 'html' | null>(null);
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -274,6 +277,62 @@ export default function PosDashboard() {
         err?.response?.data?.message ?? err?.message ?? 'E-Mail konnte nicht versendet werden.';
       setEmailStatus('error');
       setEmailError(message);
+    }
+  };
+
+  const resolveFilename = (header?: string, fallback?: string) => {
+    if (!header) {
+      return fallback ?? 'receipt.pdf';
+    }
+
+    const starMatch = header.match(/filename\*=(?:UTF-8'')?([^;]+)/i);
+    if (starMatch?.[1]) {
+      const cleaned = starMatch[1].replace(/^"|"$/g, '');
+      try {
+        return decodeURIComponent(cleaned);
+      } catch (error) {
+        console.warn('Konnte Dateinamen nicht dekodieren:', error);
+        return cleaned;
+      }
+    }
+
+    const regularMatch = header.match(/filename="?([^";]+)"?/i);
+    if (regularMatch?.[1]) {
+      return regularMatch[1];
+    }
+
+    return fallback ?? 'receipt.pdf';
+  };
+
+  const handleDownloadReceipt = async (format: 'pdf' | 'html') => {
+    if (!latestSale) {
+      return;
+    }
+
+    setActiveDownloadFormat(format);
+    setDownloadError(null);
+
+    try {
+      const response = await fetchReceiptDocument(latestSale.id, format);
+      const contentType =
+        response.headers['content-type'] ?? (format === 'pdf' ? 'application/pdf' : 'text/html');
+      const blob = new Blob([response.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      const fallbackName = `receipt-${latestSale.receiptNo}.${format}`;
+      const filename = resolveFilename(response.headers['content-disposition'], fallbackName);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download fehlgeschlagen', error);
+      setDownloadError('Download fehlgeschlagen. Bitte später erneut versuchen.');
+    } finally {
+      setActiveDownloadFormat(null);
     }
   };
 
@@ -527,6 +586,28 @@ export default function PosDashboard() {
                 {emailStatus === 'sent' && (
                   <p className="text-xs text-emerald-200">E-Mail wurde erfolgreich verschickt.</p>
                 )}
+              </div>
+              <div className="space-y-2 text-emerald-100/90">
+                <p className="text-xs uppercase tracking-wide text-emerald-200/70">Bon herunterladen</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadReceipt('pdf')}
+                    disabled={activeDownloadFormat !== null}
+                    className="flex-1 rounded-xl border border-emerald-300/40 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-200 hover:text-emerald-50 disabled:cursor-not-allowed disabled:border-emerald-300/20"
+                  >
+                    {activeDownloadFormat === 'pdf' ? 'PDF wird erstellt …' : 'Als PDF speichern'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadReceipt('html')}
+                    disabled={activeDownloadFormat !== null}
+                    className="flex-1 rounded-xl border border-emerald-300/40 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-200 hover:text-emerald-50 disabled:cursor-not-allowed disabled:border-emerald-300/20"
+                  >
+                    {activeDownloadFormat === 'html' ? 'HTML wird erstellt …' : 'Als HTML speichern'}
+                  </button>
+                </div>
+                {downloadError && <p className="text-xs text-rose-200">{downloadError}</p>}
               </div>
             </div>
           )}
