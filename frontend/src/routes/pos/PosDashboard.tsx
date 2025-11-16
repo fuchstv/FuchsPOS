@@ -3,6 +3,7 @@ import api from '../../api/client';
 import { usePosStore } from '../../store/posStore';
 import type { PaymentMethod } from '../../store/types';
 import { usePosRealtime } from '../../realtime/PosRealtimeContext';
+import { CashClosingPanel } from './components/CashClosingPanel';
 
 type HealthStatus = {
   status: string;
@@ -726,6 +727,8 @@ export default function PosDashboard() {
               </ul>
             )}
           </section>
+
+          <CashClosingPanel />
 
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-400">
             <h3 className="text-sm font-semibold text-slate-200">Systemstatus</h3>
