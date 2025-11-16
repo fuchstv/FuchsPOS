@@ -13,6 +13,7 @@ import type { WoltOrder, WoltProduct } from './wolt.types';
 export class WoltApiService {
   private readonly logger = new Logger(WoltApiService.name);
   private readonly http?: AxiosInstance;
+  private readonly token?: string;
 
   constructor() {
     const baseURL = process.env.WOLT_API_BASE_URL;
@@ -24,6 +25,7 @@ export class WoltApiService {
       return;
     }
 
+    this.token = token;
     this.http = axios.create({
       baseURL,
       headers: {
@@ -112,5 +114,13 @@ export class WoltApiService {
     }
 
     return [];
+  }
+
+  /**
+   * Returns the API token used for the current Wolt API instance.
+   * This is used to resolve the associated tenant in multi-tenant setups.
+   */
+  getToken(): string | undefined {
+    return this.token;
   }
 }
