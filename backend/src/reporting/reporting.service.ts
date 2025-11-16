@@ -23,6 +23,8 @@ type AggregatedBucket = {
   paymentMethods: Record<string, { count: number; total: number }>;
 };
 
+const FINALIZED_SALE_STATUSES: Prisma.SaleStatus[] = ['SUCCESS', 'REFUND', 'REFUNDED'];
+
 @Injectable()
 export class ReportingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -44,10 +46,6 @@ export class ReportingService {
     const buckets = new Map<string, AggregatedBucket>();
 
     for (const record of records) {
-      if (record.status !== 'SUCCESS') {
-        continue;
-      }
-
       const key = this.getPeriodKey(record.createdAt, granularity);
       const bucket = buckets.get(key) ?? {
         period: key,
@@ -240,6 +238,8 @@ export class ReportingService {
 
   private buildSaleFilter(query: DateRangeQueryDto): Prisma.SaleWhereInput {
     const where: Prisma.SaleWhereInput = {};
+
+    where.status = { in: FINALIZED_SALE_STATUSES };
 
     if (query.startDate || query.endDate) {
       where.createdAt = {

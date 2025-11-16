@@ -85,4 +85,10 @@ export type SalePayload = {
   cashEvents?: CashEventPayload[];
   /** A summary of the associated pre-order, if any. */
   preorder?: PreorderSummaryPayload;
+  /** Indicates if the sale is a refund and links to the original sale. */
+  refundForId?: number | null;
+  /** Optional refund reason. */
+  refundReason?: string | null;
+  /** Optional operator reference for refunds. */
+  operatorId?: string | null;
 };

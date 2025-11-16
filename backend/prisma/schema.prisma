@@ -12,6 +12,8 @@ enum SaleStatus {
   SUCCESS
   FAILED
   PROCESSING
+  REFUND
+  REFUNDED
 }
 
 model Sale {
@@ -25,9 +27,16 @@ model Sale {
   locationId    String?
   createdAt     DateTime    @default(now())
   fiscalMetadata Json?
+  refundForId   Int?
+  refundReason  String?
+  operatorId    String?
   documents     DeliveryDocument[]
   cashEvents    CashEvent[]
   preorder      Preorder?
+  refundFor     Sale?       @relation("SaleRefunds", fields: [refundForId], references: [id], onDelete: SetNull)
+  refunds       Sale[]      @relation("SaleRefunds")
+
+  @@index([refundForId])
 }
 
 enum PreorderStatus {

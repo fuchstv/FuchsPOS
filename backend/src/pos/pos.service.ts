@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Sale as SaleModel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto, PaymentMethod } from './dto/create-payment.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
 import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { PosHardwareService } from '../hardware/pos-hardware.service';
@@ -12,6 +12,7 @@ import type { FiscalMetadataPayload, SalePayload } from './types/sale-payload';
 import { FiscalizationService } from '../fiscal/fiscalization.service';
 import { PreordersService } from '../preorders/preorders.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
+import { RefundPaymentDto } from './dto/refund-payment.dto';
 
 const LATEST_SALE_TTL_SECONDS = 60 * 5;
 const CART_TTL_SECONDS = 60 * 60;
@@ -130,6 +131,85 @@ export class PosService {
   }
 
   /**
+   * Creates a refund for a previously captured sale.
+   */
+  async refundPayment(dto: RefundPaymentDto) {
+    try {
+      const originalSale = await this.prisma.sale.findUnique({ where: { id: dto.saleId } });
+      if (!originalSale) {
+        throw new NotFoundException(`Sale ${dto.saleId} not found`);
+      }
+
+      if (originalSale.status === 'REFUNDED') {
+        throw new BadRequestException('Sale has already been fully refunded.');
+      }
+
+      if (originalSale.status === 'REFUND') {
+        throw new BadRequestException('Refund transactions cannot be refunded.');
+      }
+
+      const negativeItems = dto.items.map(item => ({
+        ...item,
+        quantity: -Math.abs(item.quantity),
+      }));
+
+      const refundSaleDto = {
+        items: negativeItems,
+        paymentMethod: (originalSale.paymentMethod as PaymentMethod) ?? 'CASH',
+        reference: originalSale.reference ?? undefined,
+        locationId: originalSale.locationId ?? undefined,
+      } as CreatePaymentDto;
+
+      const receiptNo = this.generateReceiptNumber();
+      const total = Number(this.calculateTotal(refundSaleDto).toFixed(2));
+      const fiscalization = await this.fiscalization.registerReceipt(receiptNo, refundSaleDto, total, {
+        type: 'REFUND',
+      });
+
+      const [refundSale] = await this.prisma.$transaction([
+        this.prisma.sale.create({
+          data: {
+            receiptNo,
+            paymentMethod: refundSaleDto.paymentMethod,
+            total,
+            status: 'REFUND',
+            items: refundSaleDto.items as unknown as Prisma.InputJsonValue,
+            reference: refundSaleDto.reference ?? null,
+            locationId: refundSaleDto.locationId ?? null,
+            fiscalMetadata: fiscalization,
+            refundForId: originalSale.id,
+            refundReason: dto.reason ?? null,
+            operatorId: dto.operatorId ?? null,
+          },
+        }),
+        this.prisma.sale.update({
+          where: { id: originalSale.id },
+          data: { status: 'REFUNDED' },
+        }),
+      ]);
+
+      const payload = await this.buildSalePayload(refundSale);
+      await this.redis.setJson('pos:latest-sale', payload, LATEST_SALE_TTL_SECONDS);
+      await this.hardware.printReceipt(payload);
+
+      this.realtime.broadcast('sale.refund', { sale: payload, originalSaleId: originalSale.id });
+      this.realtime.broadcastQueueMetrics('payments', {
+        pending: 0,
+        lastReceipt: payload.receiptNo,
+        lastTotal: payload.total,
+      });
+
+      return {
+        message: 'Refund processed successfully',
+        sale: payload,
+      };
+    } catch (error) {
+      this.realtime.broadcastSystemError('refunds', error);
+      throw error;
+    }
+  }
+
+  /**
    * Sends an email receipt for a previously completed sale.
    *
    * @param dto - The data transfer object containing the sale ID and recipient email.
@@ -198,7 +278,15 @@ export class PosService {
    */
   private async createSaleEntity(
     dto: CreatePaymentDto,
-    options?: { receiptNo?: string; total?: number; fiscalization?: FiscalMetadataPayload | undefined },
+    options?: {
+      receiptNo?: string;
+      total?: number;
+      fiscalization?: FiscalMetadataPayload | undefined;
+      status?: Prisma.SaleStatus;
+      refundForId?: number | null;
+      refundReason?: string | null;
+      operatorId?: string | null;
+    },
   ): Promise<SaleModel> {
     const total = options?.total ?? Number(this.calculateTotal(dto).toFixed(2));
     const receiptNo = options?.receiptNo ?? this.generateReceiptNumber();
@@ -208,11 +296,14 @@ export class PosService {
         receiptNo,
         paymentMethod: dto.paymentMethod,
         total,
-        status: 'SUCCESS',
+        status: options?.status ?? 'SUCCESS',
         items: dto.items as unknown as Prisma.InputJsonValue,
         reference: dto.reference ?? null,
         locationId: dto.locationId ?? null,
         fiscalMetadata: options?.fiscalization,
+        refundForId: options?.refundForId ?? null,
+        refundReason: options?.refundReason ?? null,
+        operatorId: options?.operatorId ?? null,
       },
     });
   }
@@ -255,6 +346,9 @@ export class PosService {
       fiscalization: sale.fiscalMetadata
         ? (sale.fiscalMetadata as SalePayload['fiscalization'])
         : undefined,
+      refundForId: sale.refundForId,
+      refundReason: sale.refundReason,
+      operatorId: sale.operatorId,
     };
   }
 

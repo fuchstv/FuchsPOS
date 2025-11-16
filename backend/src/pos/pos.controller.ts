@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { PosService } from './pos.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
 import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { CashClosingService } from './cash-closing.service';
+import { RefundPaymentDto } from './dto/refund-payment.dto';
 
 /**
  * Controller for Point of Sale (POS) operations.
@@ -33,6 +34,17 @@ export class PosController {
   @Post('payments')
   processPayment(@Body() dto: CreatePaymentDto) {
     return this.posService.processPayment(dto);
+  }
+
+  /**
+   * Issues a refund for an existing sale.
+   */
+  @Post('payments/:id/refund')
+  refundPayment(@Param('id', ParseIntPipe) saleId: number, @Body() dto: RefundPaymentDto) {
+    if (dto.saleId !== saleId) {
+      throw new BadRequestException('Sale ID in body does not match requested resource.');
+    }
+    return this.posService.refundPayment(dto);
   }
 
   /**

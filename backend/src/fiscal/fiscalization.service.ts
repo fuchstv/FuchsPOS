@@ -31,6 +31,7 @@ export class FiscalizationService {
     receiptNo: string,
     dto: CreatePaymentDto,
     total: number,
+    options?: { type?: 'RECEIPT' | 'REFUND' },
   ): Promise<FiscalMetadataPayload | undefined> {
     const context = await this.management.getActiveContext();
     if (!context) {
@@ -45,7 +46,7 @@ export class FiscalizationService {
 
     try {
       const startResponse = await this.fiskaly.startTransaction(context.tss.id, {
-        type: 'RECEIPT',
+        type: options?.type ?? 'RECEIPT',
         client_id: context.tenant.fiskalyClientId,
         cash_register_id: context.cashRegister.id,
       });
