@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { IntegrationsService } from './integrations.service';
 import { CreateCsvPresetDto } from './dto/create-csv-preset.dto';
 import { CsvExportRequestDto } from './dto/csv-export-request.dto';
@@ -68,5 +68,14 @@ export class IntegrationsController {
   @Post('webhooks/test')
   triggerWebhook(@Body() dto: TriggerWebhookDto) {
     return this.integrations.triggerWebhook(dto);
+  }
+
+  /**
+   * Looks up metadata for a given EAN via OpenGTIN.
+   * @param ean - The barcode to search for.
+   */
+  @Get('ean/:ean')
+  lookupEan(@Param('ean') ean: string) {
+    return this.integrations.lookupEan(ean);
   }
 }
