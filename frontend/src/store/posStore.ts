@@ -461,6 +461,7 @@ export const usePosStore = create<PosStore>((set, get) => {
 
       let preorders: PreorderRecord[] = [];
       let cashEvents: CashEventRecord[] = [];
+      let latestSale: SaleResponse['sale'] | undefined;
       try {
         const [preorderResponse, cashEventResponse] = await Promise.all([
           api.get<PreorderRecord[]>('/pos/preorders'),
@@ -468,8 +469,19 @@ export const usePosStore = create<PosStore>((set, get) => {
         ]);
         preorders = preorderResponse.data ?? [];
         cashEvents = cashEventResponse.data ?? [];
-      } catch (error) {
+      } catch (error: any) {
         console.warn('Vorbestellungen oder Kassenevents konnten nicht synchronisiert werden.', error);
+      }
+
+      try {
+        const latestSaleResponse = await api.get<SaleResponse>('/pos/payments/latest');
+        latestSale = latestSaleResponse.data?.sale;
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          console.info('Noch kein Verkauf gespeichert. Überspringe Initialbeleg.');
+        } else {
+          console.warn('Letzter Verkauf konnte nicht geladen werden.', error);
+        }
       }
 
       set({
@@ -487,6 +499,7 @@ export const usePosStore = create<PosStore>((set, get) => {
             : queuedPayments.some(payment => payment.status === 'pending'),
         preorders,
         cashEvents,
+        latestSale,
       });
 
       if (queuedPayments.length && (typeof navigator === 'undefined' || navigator.onLine)) {

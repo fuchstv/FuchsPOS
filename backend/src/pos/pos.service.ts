@@ -170,6 +170,27 @@ export class PosService {
   }
 
   /**
+   * Retrieves the most recent sale, either from cache or the database.
+   * @returns A promise that resolves to the latest sale payload.
+   */
+  async getLatestSale() {
+    const cached = await this.redis.getJson<SalePayload>('pos:latest-sale');
+    if (cached) {
+      return { sale: this.normaliseCachedSalePayload(cached) };
+    }
+
+    const sale = await this.prisma.sale.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (!sale) {
+      throw new NotFoundException('No sales have been recorded yet.');
+    }
+
+    const payload = await this.buildSalePayload(sale);
+    await this.redis.setJson('pos:latest-sale', payload, LATEST_SALE_TTL_SECONDS);
+
+    return { sale: payload };
+  }
+
+  /**
    * Creates a new sale entity in the database.
    * @param dto - The payment data.
    * @param options - Optional parameters like receipt number, total, and fiscalization data.
@@ -260,5 +281,19 @@ export class PosService {
    */
   private async clearCachedCart(terminalId: string) {
     await this.redis.getClient().del(`pos:cart:${terminalId}`);
+  }
+
+  /**
+   * Normalises cached sale payloads that were serialized when stored.
+   * Ensures dates are converted back into Date instances.
+   *
+   * @param payload - The cached payload retrieved from Redis.
+   * @returns The normalised sale payload with proper date values.
+   */
+  private normaliseCachedSalePayload(payload: SalePayload): SalePayload {
+    return {
+      ...payload,
+      createdAt: payload.createdAt instanceof Date ? payload.createdAt : new Date(payload.createdAt),
+    };
   }
 }
