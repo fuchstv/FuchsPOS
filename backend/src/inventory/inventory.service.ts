@@ -12,6 +12,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 
 type ParsedBnnItem = {
   sku: string;
+  ean?: string | null;
   name?: string;
   quantity: number;
   unitPrice?: number;
@@ -429,9 +430,11 @@ export class InventoryService {
 
     if (dto.search?.trim()) {
       const searchTerm = dto.search.trim();
+      const eanSearch = this.extractEanSearchTerm(searchTerm);
       where.OR = [
         { sku: { contains: searchTerm, mode: 'insensitive' } },
         { name: { contains: searchTerm, mode: 'insensitive' } },
+        ...(eanSearch ? [{ ean: { contains: eanSearch } }] : []),
       ];
     }
 
@@ -471,30 +474,34 @@ export class InventoryService {
       const name = rawItem.name?.trim() || sku;
       const unit = rawItem.unit?.trim() || 'pcs';
       const defaultPrice = rawItem.defaultPrice ?? 0;
+      const hasEanInput = rawItem.ean !== undefined;
+      const normalizedEan = hasEanInput ? this.normalizeEan(rawItem.ean) : undefined;
 
       const supplier =
         rawItem.supplierName || rawItem.supplierNumber
           ? await this.ensureSupplier(dto.tenantId, rawItem.supplierName, rawItem.supplierNumber)
           : null;
 
-      const existing = await this.prisma.product.findUnique({
-        where: {
-          tenantId_sku: {
-            tenantId: dto.tenantId,
-            sku,
-          },
-        },
-      });
+      const existing = await this.findProductByIdentifiers(
+        dto.tenantId,
+        sku,
+        typeof normalizedEan === 'string' ? normalizedEan : undefined,
+      );
 
       if (existing) {
+        const updateData: Prisma.ProductUncheckedUpdateInput = {
+          name,
+          unit,
+          defaultPrice: this.toDecimal(defaultPrice),
+          ...(supplier ? { supplierId: supplier.id } : {}),
+        };
+        if (hasEanInput) {
+          updateData.ean = normalizedEan ?? null;
+        }
+
         const product = await this.prisma.product.update({
           where: { id: existing.id },
-          data: {
-            name,
-            unit,
-            defaultPrice: this.toDecimal(defaultPrice),
-            ...(supplier ? { supplierId: supplier.id } : {}),
-          },
+          data: updateData,
           include: { supplier: true },
         });
         updated.push(product);
@@ -507,6 +514,7 @@ export class InventoryService {
             unit,
             defaultPrice: this.toDecimal(defaultPrice),
             supplierId: supplier?.id ?? null,
+            ean: typeof normalizedEan === 'string' ? normalizedEan : null,
           },
           include: { supplier: true },
         });
@@ -558,6 +566,10 @@ export class InventoryService {
     }
     if (dto.defaultPrice !== undefined) {
       data.defaultPrice = this.toDecimal(dto.defaultPrice);
+    }
+    if (dto.ean !== undefined) {
+      const normalizedEan = this.normalizeEan(dto.ean);
+      data.ean = normalizedEan ?? null;
     }
 
     if (dto.supplierName || dto.supplierNumber) {
@@ -707,6 +719,14 @@ export class InventoryService {
       throw new BadRequestException('Artikel ohne SKU/EAN im BNN-Dokument gefunden.');
     }
 
+    const eanValue =
+      normalized.ean ??
+      normalized.gtin ??
+      normalized.barcode ??
+      normalized.ean13 ??
+      normalized.ean8;
+    const ean = this.normalizeEan(eanValue);
+
     const quantityValue =
       normalized.quantity ??
       normalized.qty ??
@@ -737,6 +757,7 @@ export class InventoryService {
 
     return {
       sku: String(sku),
+      ean,
       name: normalized.name ?? normalized.description ?? normalized.bezeichnung,
       quantity,
       unitPrice: unitPriceValue !== undefined && unitPriceValue !== null ? Number(unitPriceValue) : undefined,
@@ -801,16 +822,21 @@ export class InventoryService {
     supplierId: number | null,
     item: ParsedBnnItem,
   ) {
-    const existing = await this.prisma.product.findUnique({
-      where: {
-        tenantId_sku: {
-          tenantId,
-          sku: item.sku,
-        },
-      },
-    });
+    const sku = item.sku.trim();
+    const normalizedEan = this.normalizeEan(item.ean);
+    const existing = await this.findProductByIdentifiers(
+      tenantId,
+      sku,
+      normalizedEan ?? undefined,
+    );
 
     if (existing) {
+      if (normalizedEan && !existing.ean) {
+        return this.prisma.product.update({
+          where: { id: existing.id },
+          data: { ean: normalizedEan },
+        });
+      }
       return existing;
     }
 
@@ -818,12 +844,42 @@ export class InventoryService {
       data: {
         tenantId,
         supplierId,
-        sku: item.sku,
+        sku,
+        ean: normalizedEan,
         name: item.name ?? item.sku,
         unit: item.unit ?? 'pcs',
         defaultPrice: this.toDecimal(item.unitPrice ?? 0),
       },
     });
+  }
+
+  private async findProductByIdentifiers(tenantId: string, sku?: string | null, ean?: string | null) {
+    if (ean) {
+      const byEan = await this.prisma.product.findUnique({
+        where: {
+          tenantId_ean: {
+            tenantId,
+            ean,
+          },
+        },
+      });
+      if (byEan) {
+        return byEan;
+      }
+    }
+
+    if (sku) {
+      return this.prisma.product.findUnique({
+        where: {
+          tenantId_sku: {
+            tenantId,
+            sku,
+          },
+        },
+      });
+    }
+
+    return null;
   }
 
   /**
@@ -862,18 +918,17 @@ export class InventoryService {
    * @param sku - The SKU of the product.
    * @returns A promise that resolves to the product.
    */
-  private async findProductOrThrow(tenantId: string, sku: string) {
-    const product = await this.prisma.product.findUnique({
-      where: {
-        tenantId_sku: {
-          tenantId,
-          sku,
-        },
-      },
-    });
+  private async findProductOrThrow(tenantId: string, identifier: string) {
+    const normalizedSku = identifier.trim();
+    const normalizedEan = this.normalizeEan(identifier);
+    const product = await this.findProductByIdentifiers(
+      tenantId,
+      normalizedSku,
+      normalizedEan ?? undefined,
+    );
 
     if (!product) {
-      throw new NotFoundException(`Produkt ${sku} nicht gefunden.`);
+      throw new NotFoundException(`Produkt ${identifier} nicht gefunden.`);
     }
 
     return product;
@@ -892,6 +947,19 @@ export class InventoryService {
         lotNumber,
       },
     });
+  }
+
+  private extractEanSearchTerm(value: string) {
+    const digits = value.replace(/[^0-9]/g, '');
+    return digits.length >= 4 ? digits : null;
+  }
+
+  private normalizeEan(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+    const digits = value.replace(/[^0-9]/g, '');
+    return digits.length ? digits : null;
   }
 
   /**

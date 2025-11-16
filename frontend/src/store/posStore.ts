@@ -28,13 +28,32 @@ import {
 } from './offlineStorage';
 
 const defaultCatalog: CatalogItem[] = [
-  { id: 'espresso', name: 'Espresso', price: 2.5, category: 'Beverage' },
-  { id: 'flat-white', name: 'Flat White', price: 3.2, category: 'Beverage' },
-  { id: 'iced-latte', name: 'Iced Latte', price: 3.8, category: 'Beverage' },
-  { id: 'croissant', name: 'Butter Croissant', price: 2.1, category: 'Food' },
-  { id: 'cheesecake', name: 'Cheesecake Slice', price: 3.5, category: 'Food' },
-  { id: 'beans', name: 'House Blend Beans', price: 9.9, category: 'Merch' },
+  { id: 'espresso', name: 'Espresso', price: 2.5, category: 'Beverage', ean: '4006381333931' },
+  { id: 'flat-white', name: 'Flat White', price: 3.2, category: 'Beverage', ean: '4012345678901' },
+  { id: 'iced-latte', name: 'Iced Latte', price: 3.8, category: 'Beverage', ean: '4029876543216' },
+  { id: 'croissant', name: 'Butter Croissant', price: 2.1, category: 'Food', ean: '4031111122228' },
+  { id: 'cheesecake', name: 'Cheesecake Slice', price: 3.5, category: 'Food', ean: '4042222233335' },
+  { id: 'beans', name: 'House Blend Beans', price: 9.9, category: 'Merch', ean: '4053333344442' },
 ];
+
+const normalizeBarcode = (value: string) => value.replace(/[^0-9]/g, '');
+
+const findCatalogProductByCode = (catalog: CatalogItem[], code: string) => {
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const digits = normalizeBarcode(trimmed);
+  if (digits.length >= 8) {
+    const match = catalog.find(item => item.ean && normalizeBarcode(item.ean) === digits);
+    if (match) {
+      return match;
+    }
+  }
+
+  return catalog.find(item => item.id === trimmed) ?? null;
+};
 
 const defaultPaymentMethods: PaymentMethodDefinition[] = [
   {
@@ -390,12 +409,19 @@ export const usePosStore = create<PosStore>((set, get) => {
     initialized: false,
     preorders: [],
     cashEvents: [],
-    addToCart: id => {
+    addToCart: inputCode => {
       const state = get();
-      const existing = state.cart.find(item => item.id === id);
+      const product = findCatalogProductByCode(state.catalog, inputCode);
+      const resolvedId = product?.id ?? inputCode.trim();
+      if (!resolvedId) {
+        set({ error: 'Produktcode konnte nicht erkannt werden.' });
+        return;
+      }
+
+      const existing = state.cart.find(item => item.id === resolvedId);
       const updatedCart = existing
-        ? state.cart.map(item => (item.id === id ? { ...item, quantity: item.quantity + 1 } : item))
-        : [...state.cart, { id, quantity: 1 }];
+        ? state.cart.map(item => (item.id === resolvedId ? { ...item, quantity: item.quantity + 1 } : item))
+        : [...state.cart, { id: resolvedId, quantity: 1 }];
 
       set({
         cart: updatedCart,

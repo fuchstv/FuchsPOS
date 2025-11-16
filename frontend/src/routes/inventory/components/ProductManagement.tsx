@@ -12,6 +12,7 @@ import { useInventoryRealtime } from '../InventoryRealtimeContext';
 type EditableImportRow = {
   id: string;
   sku: string;
+  ean: string;
   name: string;
   unit: string;
   price: string;
@@ -28,8 +29,9 @@ const manualHeaderMap: Record<string, keyof EditableImportRow | 'price'> = {
   sku: 'sku',
   artikelnr: 'sku',
   artikelnummer: 'sku',
-  ean: 'sku',
-  gtin: 'sku',
+  ean: 'ean',
+  gtin: 'ean',
+  barcode: 'ean',
   name: 'name',
   produkt: 'name',
   produktname: 'name',
@@ -54,6 +56,7 @@ const manualHeaderMap: Record<string, keyof EditableImportRow | 'price'> = {
 
 const defaultHeaderOrder: (keyof EditableImportRow | 'price')[] = [
   'sku',
+  'ean',
   'name',
   'price',
   'unit',
@@ -116,9 +119,17 @@ function parseManualProductEntries(text: string): ManualParseResult {
       record[key] = value;
     });
 
-    const sku = record.sku?.trim();
+    const skuCandidate = record.sku?.trim();
+    const eanCandidate = record.ean?.trim();
+    const normalizedEan = eanCandidate ? normalizeEanInput(eanCandidate) : null;
+    if (eanCandidate && !normalizedEan) {
+      errors.push(`Zeile ${line.lineNumber}: EAN "${eanCandidate}" ist ungültig (8-14 Ziffern).`);
+      continue;
+    }
+
+    const sku = skuCandidate || normalizedEan;
     if (!sku) {
-      errors.push(`Zeile ${line.lineNumber}: Keine SKU erkannt.`);
+      errors.push(`Zeile ${line.lineNumber}: Keine SKU oder gültige EAN erkannt.`);
       continue;
     }
 
@@ -131,6 +142,7 @@ function parseManualProductEntries(text: string): ManualParseResult {
     items.push({
       id: buildRowId(),
       sku,
+      ean: normalizedEan ?? '',
       name,
       unit: record.unit?.trim() || 'pcs',
       price: record.price?.trim() ?? '',
@@ -160,6 +172,11 @@ function formatCurrency(value: string | number | null | undefined) {
   return currencyFormatter.format(parsed);
 }
 
+function normalizeEanInput(value: string) {
+  const digits = value.replace(/[^0-9]/g, '');
+  return digits.length >= 8 && digits.length <= 14 ? digits : null;
+}
+
 function extractSupplierNumber(product: ProductRecord) {
   return product.supplier?.supplierNumber ?? (product.supplier as any)?.bnnSupplierNumber ?? null;
 }
@@ -184,6 +201,7 @@ export default function ProductManagement() {
   const [editingProduct, setEditingProduct] = useState<ProductRecord | null>(null);
   const [editForm, setEditForm] = useState({
     sku: '',
+    ean: '',
     name: '',
     unit: '',
     price: '',
@@ -254,6 +272,7 @@ export default function ProductManagement() {
       {
         id: buildRowId(),
         sku: '',
+        ean: '',
         name: '',
         unit: 'pcs',
         price: '',
@@ -290,8 +309,15 @@ export default function ProductManagement() {
             errors.push(`Zeile ${index + 1}: Preis "${row.price}" ist ungültig.`);
             return null;
           }
+          const eanValue = row.ean.trim();
+          const normalizedEan = eanValue ? normalizeEanInput(eanValue) : null;
+          if (eanValue && !normalizedEan) {
+            errors.push(`Zeile ${index + 1}: EAN "${row.ean}" ist ungültig (8-14 Ziffern).`);
+            return null;
+          }
           return {
             sku,
+            ean: normalizedEan ?? undefined,
             name,
             unit: row.unit.trim() || undefined,
             defaultPrice: priceValue ?? undefined,
@@ -339,6 +365,7 @@ export default function ProductManagement() {
     setEditingProduct(product);
     setEditForm({
       sku: product.sku,
+      ean: product.ean ?? '',
       name: product.name,
       unit: product.unit,
       price: product.defaultPrice?.toString() ?? '',
@@ -365,6 +392,13 @@ export default function ProductManagement() {
         return;
       }
 
+      const trimmedEan = editForm.ean.trim();
+      const normalizedEan = trimmedEan ? normalizeEanInput(trimmedEan) : null;
+      if (trimmedEan && !normalizedEan) {
+        setProductError('Bitte eine gültige EAN mit 8 bis 14 Ziffern verwenden.');
+        return;
+      }
+
       setIsSavingProduct(true);
       setProductMessage(null);
       setProductError(null);
@@ -372,6 +406,7 @@ export default function ProductManagement() {
         const updated = await updateProduct(editingProduct.id, {
           tenantId: tenantLabel,
           sku: editForm.sku.trim() || undefined,
+          ean: trimmedEan ? normalizedEan ?? undefined : null,
           name: editForm.name.trim() || undefined,
           unit: editForm.unit.trim() || undefined,
           defaultPrice: parsedPrice ?? undefined,
@@ -401,7 +436,7 @@ export default function ProductManagement() {
 
   const resetEditing = useCallback(() => {
     setEditingProduct(null);
-    setEditForm({ sku: '', name: '', unit: '', price: '', supplierName: '', supplierNumber: '' });
+    setEditForm({ sku: '', ean: '', name: '', unit: '', price: '', supplierName: '', supplierNumber: '' });
     setProductMessage(null);
     setProductError(null);
   }, []);
@@ -436,7 +471,7 @@ export default function ProductManagement() {
               value={search}
               onChange={event => setSearch(event.target.value)}
               className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="z. B. Kaffee"
+              placeholder="z. B. Kaffee oder 4006381333931"
             />
           </label>
           <button
@@ -465,14 +500,14 @@ export default function ProductManagement() {
 
           <label className="space-y-2 text-sm">
             <span className="text-slate-300">Artikelzeilen einfügen</span>
-            <textarea
-              value={manualText}
-              onChange={event => setManualText(event.target.value)}
-              rows={4}
-              className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder={'SKU;Name;Preis;Einheit;Lieferant\n12345;Espresso;6,90;stk;Rösterei GmbH'}
-            />
-          </label>
+              <textarea
+                value={manualText}
+                onChange={event => setManualText(event.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder={'SKU;EAN;Name;Preis;Einheit;Lieferant\n12345;4006381333931;Espresso;6,90;stk;Rösterei GmbH'}
+              />
+            </label>
 
           <div className="flex flex-wrap gap-3">
             <button
@@ -512,30 +547,39 @@ export default function ProductManagement() {
           {editableRows.length ? (
             <div className="overflow-hidden rounded-lg border border-slate-900">
               <table className="min-w-full divide-y divide-slate-900 text-xs">
-                <thead className="bg-slate-900/50 text-slate-400">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">SKU</th>
-                    <th className="px-3 py-2 text-left font-medium">Name</th>
-                    <th className="px-3 py-2 text-left font-medium">Einheit</th>
-                    <th className="px-3 py-2 text-left font-medium">Preis</th>
-                    <th className="px-3 py-2 text-left font-medium">Lieferant</th>
-                    <th className="px-3 py-2 text-left font-medium">Aktion</th>
+                  <thead className="bg-slate-900/50 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">SKU</th>
+                      <th className="px-3 py-2 text-left font-medium">EAN / GTIN</th>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Einheit</th>
+                      <th className="px-3 py-2 text-left font-medium">Preis</th>
+                      <th className="px-3 py-2 text-left font-medium">Lieferant</th>
+                      <th className="px-3 py-2 text-left font-medium">Aktion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900/70">
-                  {editableRows.map(row => (
-                    <tr key={row.id} className="bg-slate-950/40">
-                      <td className="px-3 py-2">
-                        <input
-                          value={row.sku}
-                          onChange={event => updateRow(row.id, 'sku', event.target.value)}
-                          className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-100"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          value={row.name}
-                          onChange={event => updateRow(row.id, 'name', event.target.value)}
+                    {editableRows.map(row => (
+                      <tr key={row.id} className="bg-slate-950/40">
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.sku}
+                            onChange={event => updateRow(row.id, 'sku', event.target.value)}
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.ean}
+                            onChange={event => updateRow(row.id, 'ean', event.target.value)}
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+                            placeholder="Optional"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.name}
+                            onChange={event => updateRow(row.id, 'name', event.target.value)}
                           className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-100"
                         />
                       </td>
@@ -642,6 +686,7 @@ export default function ProductManagement() {
                   <thead className="bg-slate-900/50 text-slate-400">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">SKU</th>
+                      <th className="px-3 py-2 text-left font-medium">EAN / GTIN</th>
                       <th className="px-3 py-2 text-left font-medium">Name</th>
                       <th className="px-3 py-2 text-left font-medium">Preis</th>
                       <th className="px-3 py-2 text-left font-medium">Einheit</th>
@@ -654,6 +699,9 @@ export default function ProductManagement() {
                     {products.map(product => (
                       <tr key={product.id} className="bg-slate-950/40">
                         <td className="px-3 py-2 font-mono text-xs text-slate-200">{product.sku}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-200">
+                          {product.ean ?? '—'}
+                        </td>
                         <td className="px-3 py-2 text-slate-100">{product.name}</td>
                         <td className="px-3 py-2 text-slate-100">{formatCurrency(product.defaultPrice)}</td>
                         <td className="px-3 py-2 text-slate-300">{product.unit}</td>
@@ -708,6 +756,15 @@ export default function ProductManagement() {
                     value={editForm.sku}
                     onChange={event => setEditForm(form => ({ ...form, sku: event.target.value }))}
                     className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="text-slate-300">EAN / GTIN</span>
+                  <input
+                    value={editForm.ean}
+                    onChange={event => setEditForm(form => ({ ...form, ean: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="z. B. 4006381333931"
                   />
                 </label>
                 <label className="text-sm">

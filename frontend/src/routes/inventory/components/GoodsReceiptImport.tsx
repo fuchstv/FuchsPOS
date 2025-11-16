@@ -21,6 +21,7 @@ const currencyFormatter = new Intl.NumberFormat('de-DE', {
 
 type ManualParsedItem = {
   sku: string;
+  ean?: string;
   name?: string;
   quantity: number;
   unitprice?: number;
@@ -39,8 +40,9 @@ const manualHeaderMap: Record<string, keyof ManualParsedItem> = {
   artikelnummer: 'sku',
   articlenumber: 'sku',
   artikelnr: 'sku',
-  ean: 'sku',
-  gtin: 'sku',
+  ean: 'ean',
+  gtin: 'ean',
+  barcode: 'ean',
   product: 'name',
   produkt: 'name',
   produktname: 'name',
@@ -88,6 +90,12 @@ function parseDecimalNumber(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeManualEan(value?: string) {
+  if (!value) return null;
+  const digits = value.replace(/[^0-9]/g, '');
+  return digits.length >= 8 && digits.length <= 14 ? digits : null;
+}
+
 function parseManualEntries(text: string): ManualParseResult {
   const structuredLines = text
     .split(/\r?\n/)
@@ -105,6 +113,7 @@ function parseManualEntries(text: string): ManualParseResult {
   const headerCandidate = splitLine(structuredLines[0].content).map(column => column.toLowerCase());
   const defaultHeader: (keyof ManualParsedItem)[] = [
     'sku',
+    'ean',
     'name',
     'quantity',
     'unitprice',
@@ -141,9 +150,16 @@ function parseManualEntries(text: string): ManualParseResult {
       record[key] = value;
     });
 
-    const sku = record.sku;
+    const skuCandidate = record.sku?.trim();
+    const eanCandidate = record.ean?.trim();
+    const normalizedEan = eanCandidate ? normalizeManualEan(eanCandidate) : null;
+    if (eanCandidate && !normalizedEan) {
+      errors.push(`Zeile ${line.lineNumber}: EAN "${eanCandidate}" ist ungültig (8-14 Ziffern).`);
+      continue;
+    }
+    const sku = skuCandidate || normalizedEan;
     if (!sku) {
-      errors.push(`Zeile ${line.lineNumber}: Keine SKU gefunden.`);
+      errors.push(`Zeile ${line.lineNumber}: Keine SKU oder gültige EAN gefunden.`);
       continue;
     }
 
@@ -158,6 +174,7 @@ function parseManualEntries(text: string): ManualParseResult {
 
     items.push({
       sku,
+      ean: normalizedEan ?? undefined,
       name: record.name ?? undefined,
       quantity,
       unitprice: unitPrice,
@@ -539,16 +556,16 @@ export default function GoodsReceiptImport() {
                 onChange={event => setManualEntries(event.target.value)}
                 rows={4}
                 className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                placeholder={'SKU;Name;Menge;Einstandspreis\n12345;Mandeln 1kg;12;8,50'}
+                placeholder={'SKU;EAN;Name;Menge;Einstandspreis\n12345;4006381333931;Mandeln 1kg;12;8,50'}
               />
             </label>
             <p className="mt-2 text-xs text-slate-400">
-              Unterstützt Semikolon, Tab oder Komma als Trennzeichen. Optional mit Spaltenüberschrift (z. B. SKU;Name;Menge;Preis;MHD;Lagerort).
+              Unterstützt Semikolon, Tab oder Komma als Trennzeichen. Optional mit Spaltenüberschrift (z. B. SKU;EAN;Name;Menge;Preis;MHD;Lagerort).
             </p>
             {hasManualItems ? (
               <p className="mt-2 text-xs text-emerald-200">{manualParse.items.length} Artikel erkannt. Beim Import hat diese Liste Vorrang vor der Datei.</p>
             ) : (
-              <p className="mt-2 text-xs text-slate-500">Jede Zeile sollte mindestens eine SKU enthalten. Menge und Preis sind optional.</p>
+              <p className="mt-2 text-xs text-slate-500">Jede Zeile sollte mindestens eine SKU oder EAN enthalten. Menge und Preis sind optional.</p>
             )}
             {manualParse.errors.length ? (
               <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-rose-300">
@@ -563,6 +580,7 @@ export default function GoodsReceiptImport() {
                   <thead className="bg-slate-900/40 text-slate-400">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">SKU</th>
+                      <th className="px-3 py-2 text-left font-medium">EAN</th>
                       <th className="px-3 py-2 text-left font-medium">Name</th>
                       <th className="px-3 py-2 text-right font-medium">Menge</th>
                       <th className="px-3 py-2 text-right font-medium">Preis</th>
@@ -572,6 +590,7 @@ export default function GoodsReceiptImport() {
                     {manualItemsPreview.map((item, index) => (
                       <tr key={`${item.sku}-${index}`} className="bg-slate-950/40">
                         <td className="px-3 py-2 font-mono text-[11px] text-slate-200">{item.sku}</td>
+                        <td className="px-3 py-2 font-mono text-[11px] text-slate-200">{item.ean ?? '—'}</td>
                         <td className="px-3 py-2 text-slate-200">{item.name ?? '—'}</td>
                         <td className="px-3 py-2 text-right text-slate-100">{normalizeDecimal(String(item.quantity))}</td>
                         <td className="px-3 py-2 text-right text-slate-100">
