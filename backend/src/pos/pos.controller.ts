@@ -27,6 +27,18 @@ export class PosController {
   }
 
   /**
+   * Restores the most recently persisted cart for a terminal.
+   */
+  @Get('cart')
+  async getCart(@Query('terminalId') terminalId?: string) {
+    if (!terminalId) {
+      throw new BadRequestException('terminalId ist erforderlich.');
+    }
+
+    return this.posService.getCart(terminalId);
+  }
+
+  /**
    * Processes a payment for a sale.
    * @param dto - The payment details.
    * @returns A promise that resolves to the completed sale.
