@@ -110,8 +110,13 @@ export class PosController {
    * @returns A promise that resolves to a list of pre-orders.
    */
   @Get('preorders')
-  listPreorders() {
-    return this.posService.listPreorders();
+  listPreorders(@Query('tenantId') tenantId?: string) {
+    const normalizedTenantId = tenantId?.trim();
+    if (!normalizedTenantId) {
+      throw new BadRequestException('tenantId ist erforderlich.');
+    }
+
+    return this.posService.listPreorders(normalizedTenantId);
   }
 
   /**
@@ -120,10 +125,15 @@ export class PosController {
    * @returns A promise that resolves to a list of cash events.
    */
   @Get('cash-events')
-  listCashEvents(@Query('limit') limit?: string) {
+  listCashEvents(@Query('tenantId') tenantId?: string, @Query('limit') limit?: string) {
+    const normalizedTenantId = tenantId?.trim();
+    if (!normalizedTenantId) {
+      throw new BadRequestException('tenantId ist erforderlich.');
+    }
+
     const parsed = limit ? Number(limit) : undefined;
     const take = parsed && !Number.isNaN(parsed) ? parsed : undefined;
-    return this.posService.listCashEvents(take);
+    return this.posService.listCashEvents(normalizedTenantId, take);
   }
 
   /**

@@ -63,6 +63,35 @@ const defaultPaymentMethods: PaymentMethodDefinition[] = [
   },
 ];
 
+const POS_TENANT_STORAGE_KEY = 'fuchspos.posTenantId';
+
+const resolveTenantIdFromContext = () => {
+  const envTenantId = (import.meta.env.VITE_POS_TENANT_ID ?? '').trim();
+  if (typeof window === 'undefined') {
+    return envTenantId;
+  }
+
+  const storedTenantId = window.localStorage.getItem(POS_TENANT_STORAGE_KEY);
+  if (storedTenantId && storedTenantId.trim()) {
+    return storedTenantId.trim();
+  }
+
+  if (envTenantId) {
+    window.localStorage.setItem(POS_TENANT_STORAGE_KEY, envTenantId);
+    return envTenantId;
+  }
+
+  return '';
+};
+
+const persistTenantPreference = (tenantId: string) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(POS_TENANT_STORAGE_KEY, tenantId);
+};
+
 type RemoteCartResponse = {
   cart: {
     terminalId: string;
@@ -115,6 +144,8 @@ type PosStore = {
   queuedPayments: PaymentIntent[];
   /** The unique identifier for this POS terminal. */
   terminalId: string;
+  /** The active tenant identifier for the POS context. */
+  tenantId: string | null;
   /** A flag indicating if the store has been initialized. */
   initialized: boolean;
   /** A list of active preorders. */
@@ -145,6 +176,8 @@ type PosStore = {
   addCashEvent: (event: CashEventRecord) => void;
   /** Applies the effects of a sale that was completed on another terminal. */
   applyRemoteSale: (sale: SaleRecord) => void;
+  /** Updates the tenant context manually. */
+  setTenantId: (tenantId: string) => void;
 };
 
 const MAX_CASH_EVENTS = 50;
@@ -273,6 +306,7 @@ const mergePaymentPreferences = (
  * @returns {object} The Zustand store instance.
  */
 export const usePosStore = create<PosStore>((set, get) => {
+  const initialTenantId = resolveTenantIdFromContext();
   const persistCart = async (cart: CartItem[]) => {
     const { catalog, terminalId } = get();
     const totals = calculateCartTotals(cart, catalog);
@@ -352,6 +386,7 @@ export const usePosStore = create<PosStore>((set, get) => {
     isOffline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
     queuedPayments: [],
     terminalId: '',
+    tenantId: initialTenantId || null,
     initialized: false,
     preorders: [],
     cashEvents: [],
@@ -497,15 +532,27 @@ export const usePosStore = create<PosStore>((set, get) => {
       let preorders: PreorderRecord[] = [];
       let cashEvents: CashEventRecord[] = [];
       let latestSale: SaleResponse['sale'] | undefined;
-      try {
-        const [preorderResponse, cashEventResponse] = await Promise.all([
-          api.get<PreorderRecord[]>('/pos/preorders'),
-          api.get<CashEventRecord[]>('/pos/cash-events', { params: { limit: 50 } }),
-        ]);
-        preorders = preorderResponse.data ?? [];
-        cashEvents = cashEventResponse.data ?? [];
-      } catch (error: any) {
-        console.warn('Vorbestellungen oder Kassenevents konnten nicht synchronisiert werden.', error);
+
+      const configuredTenantId = get().tenantId?.trim() || resolveTenantIdFromContext();
+      if (configuredTenantId !== get().tenantId) {
+        set({ tenantId: configuredTenantId || null });
+      }
+
+      if (configuredTenantId) {
+        try {
+          const [preorderResponse, cashEventResponse] = await Promise.all([
+            api.get<PreorderRecord[]>('/pos/preorders', { params: { tenantId: configuredTenantId } }),
+            api.get<CashEventRecord[]>('/pos/cash-events', {
+              params: { limit: 50, tenantId: configuredTenantId },
+            }),
+          ]);
+          preorders = preorderResponse.data ?? [];
+          cashEvents = cashEventResponse.data ?? [];
+        } catch (error: any) {
+          console.warn('Vorbestellungen oder Kassenevents konnten nicht synchronisiert werden.', error);
+        }
+      } else {
+        console.warn('Keine Tenant-ID konfiguriert. Vorbestellungen und Kassenevents werden nicht geladen.');
       }
 
       try {
@@ -716,6 +763,10 @@ export const usePosStore = create<PosStore>((set, get) => {
           error: isSameSale ? state.error : undefined,
         };
       });
+    },
+    setTenantId: tenantId => {
+      persistTenantPreference(tenantId.trim());
+      set({ tenantId: tenantId.trim() || null });
     },
   };
 });
