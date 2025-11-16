@@ -8,6 +8,7 @@ import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { PosHardwareService } from '../hardware/pos-hardware.service';
 import { MailerService } from '../mailer/mailer.service';
 import { renderReceiptEmail } from '../mailer/templates/receipt-email.template';
+import { createReceiptViewModel, renderReceiptHtml, renderReceiptPdf } from '../mailer/templates/receipt-renderer';
 import type { FiscalMetadataPayload, SalePayload } from './types/sale-payload';
 import { FiscalizationService } from '../fiscal/fiscalization.service';
 import { PreordersService } from '../preorders/preorders.service';
@@ -253,6 +254,43 @@ export class PosService {
     return {
       message: 'Receipt email sent',
       sale: payload,
+    };
+  }
+
+  /**
+   * Generates a receipt document as HTML or PDF for download.
+   */
+  async getReceiptDocument(
+    saleId: number,
+    format: 'pdf' | 'html',
+  ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    const sale = await this.prisma.sale.findUnique({ where: { id: saleId } });
+    if (!sale) {
+      throw new NotFoundException(`Sale ${saleId} not found`);
+    }
+
+    const normalizedFormat = format === 'pdf' || format === 'html' ? format : null;
+    if (!normalizedFormat) {
+      throw new BadRequestException('Unsupported document format requested.');
+    }
+
+    const payload = await this.buildSalePayload(sale);
+    const viewModel = createReceiptViewModel(payload, { businessName: 'FuchsPOS' });
+
+    if (normalizedFormat === 'html') {
+      const html = renderReceiptHtml(viewModel);
+      return {
+        buffer: Buffer.from(html, 'utf-8'),
+        filename: `receipt-${payload.receiptNo}.html`,
+        contentType: 'text/html; charset=utf-8',
+      };
+    }
+
+    const buffer = renderReceiptPdf(viewModel);
+    return {
+      buffer,
+      filename: `receipt-${payload.receiptNo}.pdf`,
+      contentType: 'application/pdf',
     };
   }
 
