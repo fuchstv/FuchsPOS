@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma, Sale } from '@prisma/client';
 import axios from 'axios';
 import { createHash } from 'crypto';
@@ -7,6 +7,25 @@ import { CreateCsvPresetDto, CsvColumnDefinitionDto } from './dto/create-csv-pre
 import { CsvExportRequestDto } from './dto/csv-export-request.dto';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
 import { TriggerWebhookDto } from './dto/trigger-webhook.dto';
+
+const OPENGTINDB_ENDPOINT = 'https://opengtindb.org/api.php';
+const DEFAULT_QUERY_ID = process.env.OPENGTINDB_QUERY_ID ?? '400000000';
+
+type OpenGtinRecord = Record<string, string | null>;
+
+export type EanLookupStatus = 'FOUND' | 'NOT_FOUND' | 'ERROR';
+
+export type EanLookupResult = {
+  ean: string;
+  status: EanLookupStatus;
+  name?: string | null;
+  brand?: string | null;
+  description?: string | null;
+  mainCategory?: string | null;
+  subCategory?: string | null;
+  message?: string | null;
+  raw: OpenGtinRecord;
+};
 
 /**
  * Service for handling integrations like CSV exports and webhooks.
@@ -184,6 +203,52 @@ export class IntegrationsService {
   }
 
   /**
+   * Looks up product metadata in the OpenGTIN/EAN database.
+   * @param ean - The barcode to look up.
+   */
+  async lookupEan(ean: string): Promise<EanLookupResult> {
+    const sanitized = ean?.replace(/[^0-9]/g, '');
+    if (!sanitized) {
+      throw new BadRequestException('EAN darf nicht leer sein.');
+    }
+    if (sanitized.length < 8 || sanitized.length > 14) {
+      throw new BadRequestException('Ungültige EAN-Länge.');
+    }
+
+    let payload = '';
+    try {
+      const { data } = await axios.get<string>(OPENGTINDB_ENDPOINT, {
+        params: {
+          cmd: 'ean',
+          ean: sanitized,
+          queryid: DEFAULT_QUERY_ID,
+        },
+        responseType: 'text',
+        timeout: 5000,
+      });
+      payload = typeof data === 'string' ? data : String(data ?? '');
+    } catch (error) {
+      const message =
+        axios.isAxiosError(error) && error.response?.status === 404
+          ? 'EAN-Datensatz wurde nicht gefunden.'
+          : 'EAN-Datenbank ist derzeit nicht erreichbar.';
+      throw new ServiceUnavailableException(message);
+    }
+
+    if (!payload.trim()) {
+      return {
+        ean: sanitized,
+        status: 'ERROR',
+        message: 'EAN-Datenbank hat keine Daten zurückgegeben.',
+        raw: {},
+      };
+    }
+
+    const { record, rawText } = this.parseOpenGtinResponse(payload);
+    return this.buildLookupResult(record, sanitized, rawText);
+  }
+
+  /**
    * Normalizes the 'items' property of a sale, ensuring it's always an array.
    * @param sale - The sale object.
    * @returns An array of sale items.
@@ -191,6 +256,61 @@ export class IntegrationsService {
   private normaliseItems(sale: { items: Prisma.JsonValue }): Array<Record<string, unknown>> {
     const items = sale.items as Array<Record<string, unknown>> | null;
     return Array.isArray(items) ? items : [];
+  }
+
+  private parseOpenGtinResponse(payload: string): { record: OpenGtinRecord; rawText: string } {
+    const record: OpenGtinRecord = {};
+    payload
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .forEach(line => {
+        const [key, ...valueParts] = line.split('=');
+        if (!key) {
+          return;
+        }
+        const value = valueParts.length ? valueParts.join('=').trim() : null;
+        record[key.toLowerCase()] = value && value.length ? value : null;
+      });
+
+    return { record, rawText: payload.trim() };
+  }
+
+  private buildLookupResult(
+    record: OpenGtinRecord,
+    fallbackEan: string,
+    rawText: string,
+  ): EanLookupResult {
+    const errorCode = record.error ?? record.result ?? null;
+    let status: EanLookupStatus = 'ERROR';
+    if (errorCode === '0') {
+      status = 'FOUND';
+    } else if (errorCode === '1') {
+      status = 'NOT_FOUND';
+    }
+
+    const raw: OpenGtinRecord = { ...record };
+    const hasStructuredPayload = Object.keys(record).length > 0;
+    const baseMessage = record.error_text ?? record.result_text ?? null;
+    const message =
+      baseMessage ??
+      (status === 'NOT_FOUND'
+        ? 'EAN nicht gefunden.'
+        : hasStructuredPayload
+          ? null
+          : 'Antwort der EAN-Datenbank konnte nicht interpretiert werden.');
+
+    return {
+      ean: record.ean ?? fallbackEan,
+      status,
+      name: record.name ?? record.productname ?? null,
+      brand: record.brand ?? record.vendor ?? record.manufacturer ?? null,
+      description: record.description ?? record.text ?? null,
+      mainCategory: record.maincat ?? record.category ?? null,
+      subCategory: record.subcat ?? record.subcategory ?? null,
+      message,
+      raw: hasStructuredPayload ? raw : { raw: rawText },
+    };
   }
 
   /**

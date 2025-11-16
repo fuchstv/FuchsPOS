@@ -1,6 +1,7 @@
 import GoodsReceiptImport from './components/GoodsReceiptImport';
 import InventoryCounts from './components/InventoryCounts';
 import PriceChangeForm from './components/PriceChangeForm';
+import EanLookup from './components/EanLookup';
 import { useInventoryRealtime } from './InventoryRealtimeContext';
 
 const badgeTone: Record<string, string> = {
@@ -33,6 +34,7 @@ export default function InventoryDashboard() {
       <GoodsReceiptImport />
       <InventoryCounts />
       <PriceChangeForm />
+      <EanLookup />
 
       <section className="space-y-4">
         <header className="flex items-center justify-between">
