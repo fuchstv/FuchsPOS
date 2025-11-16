@@ -158,6 +158,20 @@ export type CashEventRecord = {
 };
 
 /**
+ * Represents the result of a cash closing (X- or Z-Bon).
+ */
+export type CashClosingRecord = {
+  id: number;
+  type: 'X' | 'Z';
+  fromDate: string;
+  toDate: string;
+  createdAt: string;
+  saleCount: number;
+  totalGross: number;
+  paymentMethods: Record<string, { total: number; count: number }>;
+};
+
+/**
  * Defines the possible statuses of a preorder.
  */
 export type PreorderStatus = 'ORDERED' | 'READY' | 'PICKED_UP';

@@ -6,6 +6,7 @@ import { MailerModule } from '../mailer/mailer.module';
 import { FiscalModule } from '../fiscal/fiscal.module';
 import { PreordersModule } from '../preorders/preorders.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { CashClosingService } from './cash-closing.service';
 
 /**
  * The module for Point of Sale (POS) functionality.
@@ -16,6 +17,6 @@ import { RealtimeModule } from '../realtime/realtime.module';
 @Module({
   imports: [HardwareModule, MailerModule, FiscalModule, PreordersModule, RealtimeModule],
   controllers: [PosController],
-  providers: [PosService],
+  providers: [PosService, CashClosingService],
 })
 export class PosModule {}

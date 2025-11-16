@@ -155,6 +155,23 @@ model CashEvent {
   @@index([preorderId])
 }
 
+enum CashClosingType {
+  X
+  Z
+}
+
+model CashClosing {
+  id        Int             @id @default(autoincrement())
+  type      CashClosingType
+  fromDate  DateTime
+  toDate    DateTime
+  summary   Json
+  createdAt DateTime        @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
+
 model WoltProduct {
   id          Int       @id @default(autoincrement())
   externalId  String    @unique

@@ -3,13 +3,17 @@ import { PosService } from './pos.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { SyncCartDto } from './dto/sync-cart.dto';
 import { EmailReceiptDto } from './dto/email-receipt.dto';
+import { CashClosingService } from './cash-closing.service';
 
 /**
  * Controller for Point of Sale (POS) operations.
  */
 @Controller('pos')
 export class PosController {
-  constructor(private readonly posService: PosService) {}
+  constructor(
+    private readonly posService: PosService,
+    private readonly cashClosing: CashClosingService,
+  ) {}
 
   /**
    * Synchronizes the state of a shopping cart.
@@ -78,5 +82,40 @@ export class PosController {
     const parsed = limit ? Number(limit) : undefined;
     const take = parsed && !Number.isNaN(parsed) ? parsed : undefined;
     return this.posService.listCashEvents(take);
+  }
+
+  /**
+   * Returns the most recent cash closings.
+   */
+  @Get('closings')
+  async listClosings(@Query('limit') limit?: string) {
+    const parsed = limit ? Number(limit) : undefined;
+    const take = parsed && !Number.isNaN(parsed) ? parsed : undefined;
+    const closings = await this.cashClosing.listClosings(take);
+    return { closings };
+  }
+
+  /**
+   * Creates an intermediate closing (X-Bon).
+   */
+  @Post('closings/x')
+  async createXClosing() {
+    const closing = await this.cashClosing.createClosing('X');
+    return {
+      message: 'X-Bon erstellt',
+      closing,
+    };
+  }
+
+  /**
+   * Creates a final daily closing (Z-Bon).
+   */
+  @Post('closings/z')
+  async createZClosing() {
+    const closing = await this.cashClosing.createClosing('Z');
+    return {
+      message: 'Z-Bon erstellt',
+      closing,
+    };
   }
 }
