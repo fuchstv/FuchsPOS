@@ -215,8 +215,8 @@ export default function PosDashboard() {
     });
 
     const offSale = realtimeClient.on('sale.completed', payload => {
-      if (payload?.sale) {
-        applyRemoteSale(payload.sale);
+      if (payload && typeof payload === 'object' && 'sale' in payload) {
+        applyRemoteSale(payload.sale as { id: string });
       }
     });
 
@@ -272,9 +272,13 @@ export default function PosDashboard() {
         email: receiptEmail.trim(),
       });
       setEmailStatus('sent');
-    } catch (err: any) {
+    } catch (err: unknown) {
       const message =
-        err?.response?.data?.message ?? err?.message ?? 'E-Mail konnte nicht versendet werden.';
+        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data && typeof err.response.data.message === 'string'
+          ? err.response.data.message
+          : err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+          ? err.message
+          : 'E-Mail konnte nicht versendet werden.';
       setEmailStatus('error');
       setEmailError(message);
     }
@@ -342,9 +346,9 @@ export default function PosDashboard() {
         const { data } = await api.get<HealthStatus>('/health');
         setHealth(data);
         setHealthError(null);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setHealth(null);
-        setHealthError(err?.message ?? 'Health-Check fehlgeschlagen');
+        setHealthError(err && typeof err === 'object' && 'message' in err && typeof err.message === 'string' ? err.message : 'Health-Check fehlgeschlagen');
       }
     };
 

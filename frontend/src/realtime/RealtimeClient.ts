@@ -1,4 +1,4 @@
-type Listener = (payload?: any) => void;
+type Listener = (payload?: unknown) => void;
 
 type ListenerMap = Map<string, Set<Listener>>;
 
@@ -231,7 +231,7 @@ export class RealtimeClient {
    * @returns The extracted string, or null if the data type is unsupported.
    * @private
    */
-  private extractData(data: any): string | null {
+  private extractData(data: unknown): string | null {
     if (typeof data === 'string') {
       return data;
     }

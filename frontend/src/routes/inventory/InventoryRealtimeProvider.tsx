@@ -1,49 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { usePosRealtime } from '../../realtime/PosRealtimeContext';
-
-/**
- * Defines the possible types for inventory-related real-time events.
- */
-export type InventoryRealtimeEventType =
-  | 'goods-receipt'
-  | 'count-created'
-  | 'count-finalized'
-  | 'price-change'
-  | 'product-import'
-  | 'product-updated';
-
-/**
- * Represents a single real-time event related to inventory management.
- */
-export interface InventoryRealtimeEvent {
-  /** A unique identifier for the event. */
-  id: string;
-  /** The type of the event. */
-  type: InventoryRealtimeEventType;
-  /** A human-readable title for the event. */
-  title: string;
-  /** The ISO 8601 timestamp of when the event occurred. */
-  timestamp: string;
-  /** An optional description providing more details about the event. */
-  description?: string;
-  /** An optional payload containing additional data related to the event. */
-  payload?: unknown;
-}
-
-/**
- * Defines the shape of the context value for inventory real-time updates.
- */
-interface InventoryRealtimeContextValue {
-  /** A list of the most recent inventory events. */
-  events: InventoryRealtimeEvent[];
-  /** A function to add a new event to the list. */
-  pushEvent: (event: InventoryRealtimeEvent) => void;
-}
-
-/**
- * React context for providing real-time inventory event data.
- */
-const InventoryRealtimeContext = createContext<InventoryRealtimeContextValue | undefined>(undefined);
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePosRealtime } from '../../realtime/usePosRealtime';
+import { InventoryRealtimeContext } from './InventoryRealtimeContext';
+import { InventoryRealtimeEvent, InventoryRealtimeEventType } from './InventoryRealtimeEvents';
 
 const MAX_EVENTS = 40;
 
@@ -76,7 +34,7 @@ export function InventoryRealtimeProvider({ children }: { children: React.ReactN
       return () => undefined;
     }
 
-    const handlers: Array<[string, (payload: any) => void]> = [
+    const handlers: Array<[string, (payload: unknown) => void]> = [
       [
         'inventory.goods-receipt.imported',
         payload => {
@@ -177,18 +135,4 @@ export function InventoryRealtimeProvider({ children }: { children: React.ReactN
   const value = useMemo(() => ({ events, pushEvent }), [events, pushEvent]);
 
   return <InventoryRealtimeContext.Provider value={value}>{children}</InventoryRealtimeContext.Provider>;
-}
-
-/**
- * Custom hook for accessing the inventory real-time context.
- * This must be used within a component that is a descendant of `InventoryRealtimeProvider`.
- * @returns {InventoryRealtimeContextValue} The inventory real-time context value.
- * @throws {Error} If used outside of an `InventoryRealtimeProvider`.
- */
-export function useInventoryRealtime() {
-  const context = useContext(InventoryRealtimeContext);
-  if (!context) {
-    throw new Error('useInventoryRealtime muss innerhalb des InventoryRealtimeProvider verwendet werden.');
-  }
-  return context;
 }
