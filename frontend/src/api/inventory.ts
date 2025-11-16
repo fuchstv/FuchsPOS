@@ -99,6 +99,88 @@ export async function importGoodsReceipt(payload: ImportGoodsReceiptPayload) {
   return data;
 }
 
+export interface ProductSupplierSummary {
+  id: number;
+  name: string;
+  supplierNumber: string | null;
+}
+
+export interface ProductRecord {
+  id: number;
+  tenantId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  defaultPrice: string;
+  supplierId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  supplier: ProductSupplierSummary | null;
+}
+
+export interface ListProductsParams {
+  tenantId: string;
+  search?: string;
+  skip?: number;
+  take?: number;
+}
+
+export interface ListProductsResponse {
+  total: number;
+  skip: number;
+  take: number;
+  items: ProductRecord[];
+}
+
+export async function listProducts(params: ListProductsParams) {
+  const { data } = await api.get<ListProductsResponse>('/inventory/products', { params });
+  return data;
+}
+
+export interface ImportProductInput {
+  sku: string;
+  name: string;
+  unit?: string;
+  defaultPrice?: number;
+  supplierName?: string;
+  supplierNumber?: string;
+}
+
+export interface ImportProductCatalogPayload {
+  tenantId: string;
+  items: ImportProductInput[];
+}
+
+export interface ImportProductCatalogResponse {
+  summary: {
+    created: number;
+    updated: number;
+    total: number;
+  };
+  created: ProductRecord[];
+  updated: ProductRecord[];
+}
+
+export async function importProductCatalog(payload: ImportProductCatalogPayload) {
+  const { data } = await api.post<ImportProductCatalogResponse>('/inventory/products/import', payload);
+  return data;
+}
+
+export interface UpdateProductPayload {
+  tenantId: string;
+  sku?: string;
+  name?: string;
+  unit?: string;
+  defaultPrice?: number;
+  supplierName?: string;
+  supplierNumber?: string;
+}
+
+export async function updateProduct(productId: number, payload: UpdateProductPayload) {
+  const { data } = await api.patch<ProductRecord>(`/inventory/products/${productId}`, payload);
+  return data;
+}
+
 /**
  * Input for a single line in an inventory count.
  */

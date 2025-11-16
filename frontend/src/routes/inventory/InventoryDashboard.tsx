@@ -2,6 +2,7 @@ import GoodsReceiptImport from './components/GoodsReceiptImport';
 import InventoryCounts from './components/InventoryCounts';
 import PriceChangeForm from './components/PriceChangeForm';
 import EanLookup from './components/EanLookup';
+import ProductManagement from './components/ProductManagement';
 import { useInventoryRealtime } from './InventoryRealtimeContext';
 
 const badgeTone: Record<string, string> = {
@@ -9,6 +10,8 @@ const badgeTone: Record<string, string> = {
   'count-created': 'border-sky-400/60 bg-sky-500/10 text-sky-200',
   'count-finalized': 'border-indigo-400/60 bg-indigo-500/10 text-indigo-200',
   'price-change': 'border-amber-400/60 bg-amber-500/10 text-amber-200',
+  'product-import': 'border-fuchsia-400/60 bg-fuchsia-500/10 text-fuchsia-200',
+  'product-updated': 'border-rose-400/60 bg-rose-500/10 text-rose-200',
 };
 
 /**
@@ -31,6 +34,7 @@ export default function InventoryDashboard() {
         </p>
       </header>
 
+      <ProductManagement />
       <GoodsReceiptImport />
       <InventoryCounts />
       <PriceChangeForm />
