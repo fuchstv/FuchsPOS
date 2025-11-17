@@ -218,9 +218,16 @@ Running Docker inside WSL 2 keeps file system performance high and avoids path t
 4. **Memory tuning**: Create or update `C:\Users\<you>\.wslconfig` to constrain background usage when Docker Compose runs many services:
    ```ini
    [wsl2]
-   memory=6GB
-   processors=4
-   ```
+  memory=6GB
+  processors=4
+  ```
+
+## 🖥️ Server deployment guides
+
+Need to run the stack on bare-metal or VM infrastructure? Use the dedicated walkthroughs in the `docs/` folder:
+
+- [Linux server deployment](docs/linux-server-guide.md) – covers hardening, Docker installation, TLS termination, and a `systemd` unit to keep the Compose stack running.
+- [Windows Server deployment](docs/windows-server-guide.md) – explains how to run Docker Desktop/WSL on Windows Server, wire up IIS or Caddy for HTTPS, and keep containers alive via Scheduled Tasks or NSSM.
 
 ## 🍎 Apple Silicon Notes
 
