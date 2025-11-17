@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import PosDashboard from './routes/pos/PosDashboard';
 import {
   AccessControlLayout,
@@ -11,6 +11,10 @@ import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeP
 import ReportingDashboard from './routes/reporting/ReportingDashboard';
 import DiagnosticsPage from './routes/diagnostics/DiagnosticsPage';
 import { PosRealtimeProvider } from './realtime/PosRealtimeProvider';
+import CustomerOrderLayout from './routes/order/CustomerOrderLayout';
+import ProductCatalogPage from './routes/order/ProductCatalogPage';
+import CheckoutPage from './routes/order/CheckoutPage';
+import OrderConfirmationPage from './routes/order/OrderConfirmationPage';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
@@ -18,6 +22,7 @@ const navLinks = [
   { to: '/reporting', label: 'Reporting' },
   { to: '/diagnostics', label: 'Diagnose' },
   { to: '/admin/access-control', label: 'Access Control' },
+  { to: '/order', label: 'Kundenbestellung' },
 ];
 
 /**
@@ -34,51 +39,69 @@ export default function App() {
     <PosRealtimeProvider>
       <InventoryRealtimeProvider>
         <BrowserRouter>
-          <div className="min-h-screen bg-slate-950 text-slate-100">
-          <header className="border-b border-slate-900/80 bg-slate-950/80 backdrop-blur">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-              <NavLink to="/" className="text-lg font-semibold tracking-tight text-white">
-                FuchsPOS
-              </NavLink>
-              <nav className="flex items-center gap-2 text-sm">
-                {navLinks.map(link => (
-                  <NavLink
-                    key={link.to}
-                    to={link.to}
-                    end={link.end}
-                    className={({ isActive }) =>
-                      [
-                        'rounded-md px-3 py-2 font-medium transition-colors',
-                        isActive
-                          ? 'bg-indigo-500 text-white shadow'
-                          : 'text-slate-300 hover:bg-slate-900/70 hover:text-white',
-                      ].join(' ')
-                    }
-                  >
-                    {link.label}
-                  </NavLink>
-                ))}
-              </nav>
-            </div>
-          </header>
-
-            <main>
-              <Routes>
-                <Route path="/" element={<PosDashboard />} />
-                <Route path="/inventory" element={<InventoryDashboard />} />
-                <Route path="/reporting" element={<ReportingDashboard />} />
-                <Route path="/diagnostics" element={<DiagnosticsPage />} />
-                <Route path="/admin/access-control" element={<AccessControlLayout />}>
-                  <Route index element={<UsersPage />} />
-                  <Route path="roles" element={<RolesPage />} />
-                  <Route path="audit-log" element={<AuditLogPage />} />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </main>
-          </div>
+          <AppContainer />
         </BrowserRouter>
       </InventoryRealtimeProvider>
     </PosRealtimeProvider>
+  );
+}
+
+const customerPaths = ['/order', '/checkout', '/confirmation'];
+
+function AppContainer() {
+  const location = useLocation();
+  const isCustomerRoute = customerPaths.some(path => location.pathname.startsWith(path));
+
+  return (
+    <div className={isCustomerRoute ? 'min-h-screen bg-slate-50 text-slate-900' : 'min-h-screen bg-slate-950 text-slate-100'}>
+      {!isCustomerRoute && (
+        <header className="border-b border-slate-900/80 bg-slate-950/80 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+            <NavLink to="/" className="text-lg font-semibold tracking-tight text-white">
+              FuchsPOS
+            </NavLink>
+            <nav className="flex items-center gap-2 text-sm">
+              {navLinks.map(link => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  end={link.end}
+                  className={({ isActive }) =>
+                    [
+                      'rounded-md px-3 py-2 font-medium transition-colors',
+                      isActive
+                        ? 'bg-indigo-500 text-white shadow'
+                        : 'text-slate-300 hover:bg-slate-900/70 hover:text-white',
+                    ].join(' ')
+                  }
+                >
+                  {link.label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        </header>
+      )}
+
+      <main>
+        <Routes>
+          <Route path="/" element={<PosDashboard />} />
+          <Route path="/inventory" element={<InventoryDashboard />} />
+          <Route path="/reporting" element={<ReportingDashboard />} />
+          <Route path="/diagnostics" element={<DiagnosticsPage />} />
+          <Route path="/admin/access-control" element={<AccessControlLayout />}>
+            <Route index element={<UsersPage />} />
+            <Route path="roles" element={<RolesPage />} />
+            <Route path="audit-log" element={<AuditLogPage />} />
+          </Route>
+          <Route element={<CustomerOrderLayout />}>
+            <Route path="/order" element={<ProductCatalogPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/confirmation" element={<OrderConfirmationPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
