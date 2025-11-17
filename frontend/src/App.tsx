@@ -17,11 +17,13 @@ import CheckoutPage from './routes/order/CheckoutPage';
 import OrderConfirmationPage from './routes/order/OrderConfirmationPage';
 import OrderTrackingPage from './routes/order/TrackingPage';
 import TenantSettings from './routes/admin/TenantSettings';
+import TenantControlCenter from './routes/ops/TenantControlCenter';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
   { to: '/inventory', label: 'Inventur' },
   { to: '/reporting', label: 'Reporting' },
+  { to: '/ops/tenant-control', label: 'Ops Center' },
   { to: '/diagnostics', label: 'Diagnose' },
   { to: '/admin/access-control', label: 'Access Control' },
   { to: '/admin/tenant-settings', label: 'Mandanten' },
@@ -91,6 +93,7 @@ function AppContainer() {
           <Route path="/" element={<PosDashboard />} />
           <Route path="/inventory" element={<InventoryDashboard />} />
           <Route path="/reporting" element={<ReportingDashboard />} />
+          <Route path="/ops/tenant-control" element={<TenantControlCenter />} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />
           <Route path="/admin/tenant-settings" element={<TenantSettings />} />
           <Route path="/admin/access-control" element={<AccessControlLayout />}>
