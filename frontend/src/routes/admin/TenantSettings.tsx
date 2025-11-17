@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CashRegisterProfile,
   TenantProfile,
@@ -47,7 +47,7 @@ export default function TenantSettings() {
 
   const defaultCashRegister = selectedTenant?.cashRegisters.find(register => register.isDefault) ?? null;
 
-  const loadProfiles = async () => {
+  const loadProfiles = useCallback(async () => {
     try {
       setLoading(true);
       const data = await listTenantProfiles();
@@ -65,11 +65,11 @@ export default function TenantSettings() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTenantId]);
 
   useEffect(() => {
     void loadProfiles();
-  }, []);
+  }, [loadProfiles]);
 
   useEffect(() => {
     const firstTssId = selectedTenant?.tsses[0]?.id ?? '';
@@ -77,7 +77,7 @@ export default function TenantSettings() {
     setRegisterForm({ ...defaultRegisterForm, tssId: firstTssId });
     setEditingTssId(null);
     setEditingRegisterId(null);
-  }, [selectedTenantId, selectedTenant?.tsses?.length]);
+  }, [selectedTenantId, selectedTenant]);
 
   const handleSubmitTss = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -107,6 +107,13 @@ enum DriverAssignmentStatus {
   FAILED
 }
 
+enum TenantModuleKey {
+  OPS_ORDERS
+  OPS_DELIVERY_SLOTS
+  OPS_KITCHEN_TASKS
+  OPS_DISPATCH_ASSIGNMENTS
+}
+
 enum DeliveryDocumentType {
   DELIVERY_NOTE
   PICKUP_RECEIPT
@@ -454,6 +461,19 @@ model Tenant {
   inventoryCounts  InventoryCount[]
   priceHistories   PriceHistory[]
   promotions       Promotion[]
+  modules          TenantModule[]
+}
+
+model TenantModule {
+  id        Int              @id @default(autoincrement())
+  tenantId  String
+  module    TenantModuleKey
+  enabled   Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module])
 }
 
 model Tss {

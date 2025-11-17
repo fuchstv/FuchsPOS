@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, TenantModuleKey } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTssDto } from './dto/create-tss.dto';
 import { UpdateTssDto } from './dto/update-tss.dto';
@@ -27,6 +27,15 @@ const cashRegisterSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.CashRegisterSelect;
+
+const tenantModuleSelect = {
+  id: true,
+  tenantId: true,
+  module: true,
+  enabled: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.TenantModuleSelect;
 
 @Injectable()
 export class TenantConfigService {
@@ -183,6 +192,32 @@ export class TenantConfigService {
 
     await this.prisma.cashRegister.delete({ where: { id: registerId } });
     return { deleted: true };
+  }
+
+  async listTenantModules(tenantId: string) {
+    await this.ensureTenantExists(tenantId);
+    return this.prisma.tenantModule.findMany({
+      where: { tenantId },
+      select: tenantModuleSelect,
+      orderBy: { module: 'asc' },
+    });
+  }
+
+  async setTenantModules(tenantId: string, modules: TenantModuleKey[]) {
+    await this.ensureTenantExists(tenantId);
+    const normalized = Array.from(new Set(modules));
+
+    await this.prisma.$transaction(async tx => {
+      await tx.tenantModule.deleteMany({ where: { tenantId } });
+      if (!normalized.length) {
+        return;
+      }
+      await tx.tenantModule.createMany({
+        data: normalized.map(module => ({ tenantId, module, enabled: true })),
+      });
+    });
+
+    return this.listTenantModules(tenantId);
   }
 
   private async ensureTenantExists(tenantId: string) {
