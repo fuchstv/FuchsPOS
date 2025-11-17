@@ -1,0 +1,8 @@
+{
+  "name": "fuchspos-infra",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "configure-tenant": "node infra/configure-tenant.mjs"
+  }
+}
