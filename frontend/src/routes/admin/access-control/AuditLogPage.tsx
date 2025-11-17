@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AuditLogEntry, listAuditLogs } from '../../../api/accessControl';
+import { useTenantAccessScope } from './TenantAccessContext';
 
 /**
  * Formats a date string into a localized format.
@@ -20,6 +21,7 @@ function formatDate(value: string) {
  * @returns {JSX.Element} The rendered audit log page.
  */
 export default function AuditLogPage() {
+  const { tenantId } = useTenantAccessScope();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,12 +35,12 @@ export default function AuditLogPage() {
 
   useEffect(() => {
     void loadLogs(limit);
-  }, [limit]);
+  }, [limit, tenantId]);
 
   const loadLogs = async (currentLimit: number) => {
     try {
       setLoading(true);
-      const entries = await listAuditLogs({ limit: currentLimit });
+      const entries = await listAuditLogs(tenantId, { limit: currentLimit });
       setLogs(entries);
       setError(null);
     } catch (cause) {
