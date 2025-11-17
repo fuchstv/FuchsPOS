@@ -37,6 +37,19 @@ This project is designed to be run with Docker Compose, which simplifies the set
     ```
     You can customize the variables in this file if needed, but the defaults are suitable for local development.
 
+3.  **Create tenant-specific profiles (optional)**:
+    The repository ships with a helper in `infra/configure-tenant.mjs` that turns `.env.example` into named profiles such as `.env.demo` or `.env.acme`:
+    ```bash
+    pnpm run configure-tenant -- --id demo --set VITE_API_URL=http://localhost:3000/api
+    ```
+    The command copies `.env.example` to `.env.demo` and overrides only the variables passed via `--set`. Use `--force` when you want to recreate an existing profile.
+
+4.  **Build and run the services**:
+    ```bash
+    docker compose up --build
+    ```
+    This command will build the Docker images for the frontend and backend, start all the services (including PostgreSQL and Redis), and automatically apply any pending database migrations.
+
 3.  **Build and run the services**:
     ```bash
     docker compose up --build
@@ -47,6 +60,16 @@ This project is designed to be run with Docker Compose, which simplifies the set
     -   **Frontend**: [http://localhost:5173](http://localhost:5173)
     -   **Backend API**: [http://localhost:3000/api](http://localhost:3000/api)
     -   **Health Check**: [http://localhost:3000/api/health](http://localhost:3000/api/health)
+
+### Tenant-specific Compose profiles
+
+Once you have created a tenant profile (for example `.env.demo`), you can instruct Docker Compose to load it via the `--env-file` switch. This ensures all services pick up the tenant-specific URLs and credentials without modifying the default `.env`:
+
+```bash
+docker compose --env-file .env.demo up --build
+```
+
+The CLI-level `--env-file` flag replaces the implicit `.env` lookup and works together with the `${VARIABLE}` references defined in `docker-compose.yml`. No additional `env_file` entries are required inside the Compose file itself.
 
 ##  architecture
 
