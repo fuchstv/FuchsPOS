@@ -6,6 +6,7 @@ import { DispatchService } from '../dispatch/dispatch.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { WebhookService } from '../realtime/webhook.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OrderEngagementService } from '../engagement/order-engagement.service';
 
 const createPrismaMock = () => ({
   customerOrder: {
@@ -32,9 +33,23 @@ describe('OrdersService', () => {
   const realtime = { broadcast: jest.fn() } as unknown as PosRealtimeGateway;
   const webhooks = { dispatch: jest.fn() } as unknown as WebhookService;
 
+  const engagement = {
+    ensurePreference: jest.fn(),
+    recordStatusEvent: jest.fn(),
+    notifyStatusChange: jest.fn(),
+  } as unknown as OrderEngagementService;
+
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new OrdersService(prisma, deliverySlots, kitchen, dispatch, realtime, webhooks);
+    service = new OrdersService(
+      prisma,
+      deliverySlots,
+      kitchen,
+      dispatch,
+      realtime,
+      webhooks,
+      engagement,
+    );
     jest.clearAllMocks();
   });
 

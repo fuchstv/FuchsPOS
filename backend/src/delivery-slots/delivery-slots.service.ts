@@ -5,6 +5,7 @@ import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { WebhookService } from '../realtime/webhook.service';
 import { CreateDeliverySlotDto } from './dto/create-delivery-slot.dto';
 import { ListDeliverySlotsDto } from './dto/list-delivery-slots.dto';
+import { OrderEngagementService } from '../engagement/order-engagement.service';
 
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
   OrderStatus.SUBMITTED,
@@ -33,6 +34,7 @@ export class DeliverySlotsService {
     private readonly prisma: PrismaService,
     private readonly realtime: PosRealtimeGateway,
     private readonly webhooks: WebhookService,
+    private readonly engagement: OrderEngagementService,
   ) {}
 
   async createSlot(dto: CreateDeliverySlotDto) {
@@ -110,6 +112,7 @@ export class DeliverySlotsService {
     const enriched = await this.enrichSlot(slot);
     this.realtime.broadcast('delivery-slots.updated', enriched);
     await this.webhooks.dispatch('delivery-slots.updated', enriched);
+    await this.engagement.notifySlotUpdate(enriched);
   }
 
   private async enrichSlot(slot: DeliverySlot): Promise<DeliverySlotWithUsage> {

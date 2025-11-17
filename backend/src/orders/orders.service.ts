@@ -8,6 +8,10 @@ import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { WebhookService } from '../realtime/webhook.service';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { OrderEngagementService } from '../engagement/order-engagement.service';
+import { RegisterPushSubscriptionDto } from './dto/register-push.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
 
 const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.SUBMITTED]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
@@ -28,6 +32,7 @@ export class OrdersService {
     private readonly dispatch: DispatchService,
     private readonly realtime: PosRealtimeGateway,
     private readonly webhooks: WebhookService,
+    private readonly engagement: OrderEngagementService,
   ) {}
 
   async createOrder(dto: CreateOrderDto) {
@@ -63,6 +68,8 @@ export class OrdersService {
       await this.dispatch.planDriver({ orderId: order.id, driverName: dto.preferredDriver });
     }
 
+    await this.engagement.ensurePreference(order);
+    await this.engagement.recordStatusEvent(order.id, order.status, 'Bestellung eingegangen');
     await this.broadcast(order.id, 'orders.created');
     return this.getOrder(order.id);
   }
@@ -119,8 +126,29 @@ export class OrdersService {
 
     await this.kitchen.handleOrderStatusChange(id, dto.status);
     await this.dispatch.handleOrderStatusChange(id, dto.status);
+    await this.engagement.recordStatusEvent(id, dto.status, dto.notes);
+    await this.engagement.notifyStatusChange(updated, dto.status);
     await this.broadcast(id, 'orders.updated');
     return updated;
+  }
+
+  async getTrackingSnapshot(id: number) {
+    return this.engagement.getTrackingSnapshot(id);
+  }
+
+  async registerPushSubscription(id: number, dto: RegisterPushSubscriptionDto) {
+    const order = await this.getOrder(id);
+    return this.engagement.registerPushSubscription(order, dto);
+  }
+
+  async updateNotificationPreferences(id: number, dto: UpdateNotificationPreferencesDto) {
+    const order = await this.getOrder(id);
+    return this.engagement.updateNotificationPreferences(order, dto);
+  }
+
+  async submitFeedback(id: number, dto: SubmitFeedbackDto) {
+    const order = await this.getOrder(id);
+    return this.engagement.submitFeedback(order, dto);
   }
 
   private estimateLoad(dto: CreateOrderDto) {

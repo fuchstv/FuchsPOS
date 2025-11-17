@@ -2,6 +2,15 @@ import api from './client';
 
 export type FulfillmentType = 'DELIVERY' | 'PICKUP';
 
+export type OrderStatus =
+  | 'SUBMITTED'
+  | 'CONFIRMED'
+  | 'PREPARING'
+  | 'READY'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
+  | 'CANCELLED';
+
 export type OrderProduct = {
   id: string;
   name: string;
@@ -60,6 +69,80 @@ export type SubmitOrderResponse = {
   estimatedReadyAt?: string;
 };
 
+export type TrackingEvent = {
+  id: number;
+  status: OrderStatus;
+  notes?: string | null;
+  createdAt: string;
+};
+
+export type DriverLocationPoint = {
+  id: number;
+  latitude: number;
+  longitude: number;
+  driverStatus?: string | null;
+  accuracy?: number | null;
+  recordedAt: string;
+};
+
+export type NotificationPreference = {
+  allowStatusPush: boolean;
+  allowSlotUpdates: boolean;
+  allowEmail: boolean;
+  feedbackRequestedAt?: string | null;
+};
+
+export type TrackingSnapshot = {
+  order: {
+    id: number;
+    status: OrderStatus;
+    customerName: string;
+    deliveryAddress?: string | null;
+    totalAmount?: number | null;
+    tenantId: string;
+    slot: { id: number; startTime: string; endTime: string };
+    driverAssignment?: {
+      id: number;
+      driverName?: string | null;
+      vehicleId?: string | null;
+      status: string;
+      eta?: string | null;
+      startedAt?: string | null;
+      completedAt?: string | null;
+    } | null;
+  };
+  statusEvents: TrackingEvent[];
+  driverLocations: DriverLocationPoint[];
+  notificationPreference: NotificationPreference;
+  feedback?: {
+    rating: number;
+    comment?: string | null;
+    tipAmount?: string | null;
+    tipCurrency?: string | null;
+    driverMood?: string | null;
+  } | null;
+  pushPublicKey: string;
+  tipSuggestions: number[];
+};
+
+export type RegisterPushSubscriptionPayload = {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  userAgent?: string;
+  allowStatusPush?: boolean;
+  allowSlotUpdates?: boolean;
+  consentSource?: string;
+};
+
+export type SubmitFeedbackPayload = {
+  rating: number;
+  comment?: string;
+  tipAmount?: number;
+  tipCurrency?: string;
+  driverMood?: string;
+  contactConsent?: boolean;
+};
+
 export type PaymentSubmission =
   | { method: 'card'; intentId: string }
   | { method: 'offline'; note?: string };
@@ -106,6 +189,28 @@ export const orderApi = {
   },
   submitOrder: async (payload: OrderSubmissionPayload) => {
     const response = await api.post<SubmitOrderResponse>('/orders', payload);
+    return response.data;
+  },
+  fetchTracking: async (orderId: string | number) => {
+    const response = await api.get<TrackingSnapshot>(`/orders/${orderId}/tracking`);
+    return response.data;
+  },
+  registerPushSubscription: async (orderId: string | number, payload: RegisterPushSubscriptionPayload) => {
+    const response = await api.post(`/orders/${orderId}/notifications/subscriptions`, payload);
+    return response.data;
+  },
+  updateNotificationPreferences: async (
+    orderId: string | number,
+    payload: Partial<NotificationPreference>,
+  ) => {
+    const response = await api.patch<NotificationPreference>(
+      `/orders/${orderId}/notifications/preferences`,
+      payload,
+    );
+    return response.data;
+  },
+  submitFeedback: async (orderId: string | number, payload: SubmitFeedbackPayload) => {
+    const response = await api.post<TrackingSnapshot['feedback']>(`/orders/${orderId}/feedback`, payload);
     return response.data;
   },
 };

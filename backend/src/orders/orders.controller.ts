@@ -5,6 +5,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CustomerAuthGuard } from './customer-auth.guard';
 import { RateLimitGuard } from './rate-limit.guard';
+import { RegisterPushSubscriptionDto } from './dto/register-push.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
 
 @Controller('orders')
 export class OrdersController {
@@ -30,5 +33,35 @@ export class OrdersController {
   @Patch(':id/status')
   updateStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateOrderStatusDto) {
     return this.orders.updateStatus(id, dto);
+  }
+
+  @Get(':id/tracking')
+  @UseGuards(CustomerAuthGuard, RateLimitGuard)
+  getTracking(@Param('id', ParseIntPipe) id: number) {
+    return this.orders.getTrackingSnapshot(id);
+  }
+
+  @Post(':id/notifications/subscriptions')
+  @UseGuards(CustomerAuthGuard, RateLimitGuard)
+  registerPush(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RegisterPushSubscriptionDto,
+  ) {
+    return this.orders.registerPushSubscription(id, dto);
+  }
+
+  @Patch(':id/notifications/preferences')
+  @UseGuards(CustomerAuthGuard, RateLimitGuard)
+  updatePreferences(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    return this.orders.updateNotificationPreferences(id, dto);
+  }
+
+  @Post(':id/feedback')
+  @UseGuards(CustomerAuthGuard, RateLimitGuard)
+  submitFeedback(@Param('id', ParseIntPipe) id: number, @Body() dto: SubmitFeedbackDto) {
+    return this.orders.submitFeedback(id, dto);
   }
 }
