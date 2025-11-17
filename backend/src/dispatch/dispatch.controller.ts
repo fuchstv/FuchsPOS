@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { DriverAssignmentStatus } from '@prisma/client';
 import { DispatchService } from './dispatch.service';
 import { PlanDriverDto } from './dto/plan-driver.dto';
 import { UpdateAssignmentStatusDto } from './dto/update-assignment-status.dto';
+import { DriverAuthGuard } from './driver-auth.guard';
+import { RecordDriverLocationDto } from './dto/record-driver-location.dto';
 
 @Controller('dispatch')
 export class DispatchController {
@@ -24,5 +26,14 @@ export class DispatchController {
     @Body() dto: UpdateAssignmentStatusDto,
   ) {
     return this.dispatch.updateAssignmentStatus(id, dto.status);
+  }
+
+  @Post('assignments/:id/location')
+  @UseGuards(DriverAuthGuard)
+  recordLocation(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RecordDriverLocationDto,
+  ) {
+    return this.dispatch.recordLocation(id, dto);
   }
 }

@@ -14,4 +14,7 @@ const api = axios.create({
   },
 });
 
+const customerApiKey = import.meta.env.VITE_CUSTOMER_API_KEY ?? 'demo-customer-key';
+api.defaults.headers.common['x-pos-api-key'] = customerApiKey;
+
 export default api;

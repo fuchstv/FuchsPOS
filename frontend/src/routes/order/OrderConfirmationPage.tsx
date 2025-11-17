@@ -54,6 +54,13 @@ export default function OrderConfirmationPage() {
             </button>
             <button
               type="button"
+              onClick={() => navigate(`/order/tracking/${lastOrder.orderId}`)}
+              className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700"
+            >
+              Lieferung verfolgen
+            </button>
+            <button
+              type="button"
               onClick={() => navigate('/')}
               className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
             >

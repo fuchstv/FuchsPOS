@@ -15,6 +15,7 @@ import CustomerOrderLayout from './routes/order/CustomerOrderLayout';
 import ProductCatalogPage from './routes/order/ProductCatalogPage';
 import CheckoutPage from './routes/order/CheckoutPage';
 import OrderConfirmationPage from './routes/order/OrderConfirmationPage';
+import OrderTrackingPage from './routes/order/TrackingPage';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
@@ -46,7 +47,7 @@ export default function App() {
   );
 }
 
-const customerPaths = ['/order', '/checkout', '/confirmation'];
+const customerPaths = ['/order', '/checkout', '/confirmation', '/order/tracking'];
 
 function AppContainer() {
   const location = useLocation();
@@ -99,6 +100,7 @@ function AppContainer() {
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/confirmation" element={<OrderConfirmationPage />} />
           </Route>
+          <Route path="/order/tracking/:orderId" element={<OrderTrackingPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

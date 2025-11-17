@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DriverAssignmentStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { WebhookService } from '../realtime/webhook.service';
 import { PlanDriverDto } from './dto/plan-driver.dto';
+import { RecordDriverLocationDto } from './dto/record-driver-location.dto';
+import { OrderEngagementService } from '../engagement/order-engagement.service';
 
 @Injectable()
 export class DispatchService {
@@ -11,6 +13,7 @@ export class DispatchService {
     private readonly prisma: PrismaService,
     private readonly realtime: PosRealtimeGateway,
     private readonly webhooks: WebhookService,
+    private readonly engagement: OrderEngagementService,
   ) {}
 
   async ensureAssignment(orderId: number) {
@@ -104,6 +107,32 @@ export class DispatchService {
     }
 
     await this.emit(orderId);
+  }
+
+  async recordLocation(assignmentId: number, dto: RecordDriverLocationDto) {
+    const assignment = await this.prisma.driverAssignment.findUnique({
+      where: { id: assignmentId },
+      include: { order: true },
+    });
+    if (!assignment) {
+      throw new NotFoundException(`Fahrerzuordnung ${assignmentId} nicht gefunden.`);
+    }
+
+    const location = await this.prisma.driverLocationUpdate.create({
+      data: {
+        assignmentId,
+        orderId: assignment.orderId,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        accuracy: dto.accuracy ?? null,
+        heading: dto.heading ?? null,
+        speed: dto.speed ?? null,
+        driverStatus: dto.driverStatus ?? null,
+      },
+    });
+
+    await this.engagement.handleDriverLocationUpdate(assignment.orderId, location);
+    return location;
   }
 
   private async emit(orderId: number) {

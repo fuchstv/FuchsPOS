@@ -20,6 +20,7 @@ import { OrdersModule } from './orders/orders.module';
 import { DeliverySlotsModule } from './delivery-slots/delivery-slots.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { DispatchModule } from './dispatch/dispatch.module';
+import { EngagementModule } from './engagement/engagement.module';
 import { AppController } from './app.controller';
 
 /**
@@ -47,6 +48,7 @@ import { AppController } from './app.controller';
     AccountingModule,
     AccessControlModule,
     IntegrationsModule,
+    EngagementModule,
     OrdersModule,
     DeliverySlotsModule,
     KitchenModule,

@@ -189,6 +189,11 @@ model CustomerOrder {
   slot             DeliverySlot        @relation(fields: [slotId], references: [id], onDelete: Cascade)
   tasks            FulfillmentTask[]
   driverAssignment DriverAssignment?
+  statusEvents     OrderStatusEvent[]
+  feedback         OrderFeedback?
+  notificationPreference CustomerNotificationPreference?
+  pushSubscriptions PushSubscription[]
+  trackingUpdates  DriverLocationUpdate[]
 
   @@index([tenantId])
   @@index([status])
@@ -225,8 +230,87 @@ model DriverAssignment {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   order       CustomerOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  locations   DriverLocationUpdate[]
+  feedback    OrderFeedback?
 
   @@index([status])
+}
+
+model OrderStatusEvent {
+  id        Int          @id @default(autoincrement())
+  orderId   Int
+  status    OrderStatus
+  notes     String?
+  metadata  Json?
+  createdAt DateTime     @default(now())
+  order     CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model DriverLocationUpdate {
+  id            Int             @id @default(autoincrement())
+  orderId       Int
+  assignmentId  Int
+  latitude      Float
+  longitude     Float
+  accuracy      Float?
+  heading       Float?
+  speed         Float?
+  driverStatus  String?
+  recordedAt    DateTime        @default(now())
+  order         CustomerOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assignment    DriverAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([assignmentId])
+}
+
+model PushSubscription {
+  id           Int       @id @default(autoincrement())
+  orderId      Int?
+  tenantId     String?
+  endpoint     String    @unique
+  p256dh       String
+  authSecret   String
+  userAgent    String?
+  consentSource String?
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  metadata     Json?
+  order        CustomerOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+}
+
+model CustomerNotificationPreference {
+  id               Int      @id @default(autoincrement())
+  orderId          Int      @unique
+  allowStatusPush  Boolean  @default(false)
+  allowSlotUpdates Boolean  @default(false)
+  allowEmail       Boolean  @default(true)
+  consentSource    String?
+  feedbackRequestedAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  order            CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderFeedback {
+  id                 Int      @id @default(autoincrement())
+  orderId            Int      @unique
+  driverAssignmentId Int?     @unique
+  rating             Int
+  comment            String?
+  tipAmount          Decimal? @db.Decimal(10, 2)
+  tipCurrency        String?  @default("EUR")
+  driverMood         String?
+  contactConsent     Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  order              CustomerOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driverAssignment   DriverAssignment? @relation(fields: [driverAssignmentId], references: [id], onDelete: SetNull)
+
+  @@index([driverAssignmentId])
 }
 
 model PreorderStatusTransition {

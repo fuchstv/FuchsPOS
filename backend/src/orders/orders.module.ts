@@ -6,9 +6,10 @@ import { KitchenModule } from '../kitchen/kitchen.module';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { CustomerAuthGuard } from './customer-auth.guard';
 import { RateLimitGuard } from './rate-limit.guard';
+import { EngagementModule } from '../engagement/engagement.module';
 
 @Module({
-  imports: [DeliverySlotsModule, KitchenModule, DispatchModule],
+  imports: [DeliverySlotsModule, KitchenModule, DispatchModule, EngagementModule],
   controllers: [OrdersController],
   providers: [OrdersService, CustomerAuthGuard, RateLimitGuard],
   exports: [OrdersService],

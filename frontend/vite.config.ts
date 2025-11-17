@@ -7,7 +7,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       includeAssets: ['icon.svg'],
+      devOptions: {
+        enabled: true,
+      },
       manifest: {
         name: 'FuchsPOS',
         short_name: 'FuchsPOS',
