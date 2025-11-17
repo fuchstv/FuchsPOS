@@ -3,7 +3,7 @@ import InventoryCounts from './components/InventoryCounts';
 import PriceChangeForm from './components/PriceChangeForm';
 import EanLookup from './components/EanLookup';
 import ProductManagement from './components/ProductManagement';
-import { useInventoryRealtime } from './InventoryRealtimeContext';
+import { useInventoryRealtime } from './useInventoryRealtime';
 
 const badgeTone: Record<string, string> = {
   'goods-receipt': 'border-emerald-400/60 bg-emerald-500/10 text-emerald-200',

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePosStore } from '../../store/posStore';
 import { loadOfflineDiagnostics, type OfflineDiagnostics } from '../../store/offlineStorage';
-import { usePosRealtime } from '../../realtime/PosRealtimeContext';
+import { usePosRealtime } from '../../realtime/usePosRealtime';
 
 /**
  * Formats a date string into a localized date and time string.

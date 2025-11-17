@@ -7,10 +7,10 @@ import {
   UsersPage,
 } from './routes/admin/access-control';
 import InventoryDashboard from './routes/inventory/InventoryDashboard';
-import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeContext';
+import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeProvider';
 import ReportingDashboard from './routes/reporting/ReportingDashboard';
 import DiagnosticsPage from './routes/diagnostics/DiagnosticsPage';
-import { PosRealtimeProvider } from './realtime/PosRealtimeContext';
+import { PosRealtimeProvider } from './realtime/PosRealtimeProvider';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },

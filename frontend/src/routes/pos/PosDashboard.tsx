@@ -3,7 +3,7 @@ import api from '../../api/client';
 import { fetchReceiptDocument } from '../../api/pos';
 import { usePosStore } from '../../store/posStore';
 import type { PaymentMethod } from '../../store/types';
-import { usePosRealtime } from '../../realtime/PosRealtimeContext';
+import { usePosRealtime } from '../../realtime/usePosRealtime';
 import { CashClosingPanel } from './components/CashClosingPanel';
 
 type HealthStatus = {
