@@ -160,6 +160,89 @@ If you prefer to run the services locally without Docker, you will need to have 
     npm run dev
     ```
 
+## 🔄 Hybrid Setup: Local Code, Containerized Dependencies
+
+For many contributors it is convenient to run PostgreSQL and Redis in Docker while keeping the frontend and backend processes on the host for hot-module reloading.
+
+1. **Start only the infrastructure services**:
+   ```bash
+   docker compose up postgres redis -d
+   ```
+   The compose file exposes both services on their default ports (5432 and 6379). Feel free to adjust the ports in `docker-compose.yml` if they conflict with local installations.
+
+2. **Point your `.env` to the containers**:
+   ```env
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/fuchspos
+   REDIS_URL=redis://localhost:6379
+   ```
+
+3. **Run backend and frontend locally** following the steps from the "Local Development without Docker" section. Prisma migrations and generators will run against the databases hosted inside Docker.
+
+## 🧪 Ephemeral Preview Environments
+
+When collaborating on larger features, you can spin up disposable preview environments that resemble production but live entirely on your machine.
+
+1. **Create a dedicated `.env.preview`** by copying `.env.example` and overriding any secrets or tenant specific IDs that the review requires.
+
+2. **Use Docker Compose profiles** to start the stack with realistic data seeds:
+   ```bash
+   docker compose --profile preview up --build
+   ```
+   The preview profile enables the `seed` service defined in `docker-compose.yml`, which applies extended fixtures for reporting dashboards and fulfillment pipelines.
+
+3. **Share access** by exposing the frontend via a tool such as `cloudflared` or `ngrok`:
+   ```bash
+   cloudflared tunnel --url http://localhost:5173
+   ```
+   Reviewers get a public URL while your local backend continues to talk to the private Postgres/Redis containers.
+
+4. **Tear it down** once the review is complete:
+   ```bash
+   docker compose --profile preview down -v
+   ```
+
+## 💻 Windows & WSL 2 Setup
+
+Running Docker inside WSL 2 keeps file system performance high and avoids path translation issues.
+
+1. **Install prerequisites**: Enable WSL 2, install Ubuntu from the Microsoft Store, and install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+2. **Clone the repository inside the Linux file system** (e.g., `~/workspaces/FuchsPOS`) to benefit from native ext4 performance.
+
+3. **Forward ports for mobile testing**:
+   ```powershell
+   netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=<wsl-ip>
+   ```
+   Replace `<wsl-ip>` with the IP shown by `hostname -I` inside WSL. The same approach works for the backend (port 3000) if you need to reach the API from a device on your LAN.
+
+4. **Memory tuning**: Create or update `C:\Users\<you>\.wslconfig` to constrain background usage when Docker Compose runs many services:
+   ```ini
+   [wsl2]
+   memory=6GB
+   processors=4
+   ```
+
+## 🍎 Apple Silicon Notes
+
+All Docker images used by FuchsPOS provide multi-architecture manifests. On Apple Silicon machines:
+
+1. **Update Rosetta** (`softwareupdate --install-rosetta --agree-to-license`) if you plan to run x64-only tooling in the terminal.
+
+2. **Force native builds** to keep `docker compose` fast:
+   ```bash
+   docker buildx use default
+   docker buildx create --use --name fuchspos-arm --driver docker-container --bootstrap
+   ```
+   The second command enables cross-platform caching so repeated builds reuse previous ARM layers.
+
+3. **Set environment variables** when running Node scripts locally to avoid downloading x64 Prisma engines:
+   ```bash
+   export PRISMA_CLI_BINARY_TARGETS="native"
+   npm run prisma:generate
+   ```
+
+4. **Watch mode**: `npm run dev` in the frontend automatically picks the correct Vite binary; no further configuration is necessary.
+
 ## ☁️ Azure Deployment
 
 Use the infrastructure-as-code template and GitHub Actions workflow included in this repository whenever you target Azure. The [Azure deployment guide](docs/azure-deployment.md) documents the full topology, required secrets, and CI/CD flow.
