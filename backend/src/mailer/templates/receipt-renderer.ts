@@ -82,6 +82,18 @@ export function renderReceiptHtml(viewModel: ReceiptViewModel) {
         <p>Vielen Dank für Ihren Einkauf. Nachfolgend finden Sie die Details Ihres digitalen Bons.</p>
         <p><strong>Belegnummer:</strong> ${viewModel.sale.receiptNo}</p>
         <p><strong>Zahlungsart:</strong> ${viewModel.sale.paymentMethod}</p>
+        ${
+          viewModel.sale.table
+            ? `<p><strong>Tisch:</strong> ${viewModel.sale.table.label ?? viewModel.sale.table.tableId ?? 'ohne Zuordnung'}${
+                viewModel.sale.table.areaLabel ? ` · Bereich ${viewModel.sale.table.areaLabel}` : ''
+              }</p>`
+            : ''
+        }
+        ${
+          viewModel.sale.table?.waiterId || viewModel.sale.waiterId
+            ? `<p><strong>Service:</strong> ${viewModel.sale.table?.waiterId ?? viewModel.sale.waiterId}</p>`
+            : ''
+        }
         <table>
           <tbody>
             ${rows}
@@ -99,6 +111,29 @@ export function renderReceiptHtml(viewModel: ReceiptViewModel) {
             </tr>
           </tbody>
         </table>
+        ${
+          viewModel.sale.courses?.length
+            ? `
+        <div style="margin-top:24px;padding:16px;border-radius:12px;background:rgba(30,64,175,0.15);border:1px solid rgba(59,130,246,0.3);">
+          <h2 style="font-size:14px;margin:0 0 8px 0;letter-spacing:0.08em;text-transform:uppercase;color:#60a5fa;">Kursfolge</h2>
+          ${viewModel.sale.courses
+            .map(course => {
+              const items = course.items
+                .map(item => `<li>${item.quantity}× ${item.name}</li>`)
+                .join('');
+              return `
+            <div style="margin-bottom:12px;">
+              <strong>${course.name}</strong>
+              <span style="font-size:12px;color:#bfdbfe;"> – ${course.status}</span>
+              ${course.servedAt ? `<span style="font-size:12px;color:#93c5fd;"> · serviert ${new Date(course.servedAt).toLocaleTimeString('de-DE')}</span>` : ''}
+              <ul style="margin:6px 0 0 16px;padding:0;">${items}</ul>
+            </div>`;
+            })
+            .join('')}
+        </div>
+        `
+            : ''
+        }
         ${
           viewModel.sale.fiscalization
             ? `
@@ -136,6 +171,15 @@ export function renderReceiptPdf(viewModel: ReceiptViewModel) {
   lines.push(`Belegnummer: ${viewModel.sale.receiptNo}`);
   lines.push(`Zahlungsart: ${viewModel.sale.paymentMethod}`);
   lines.push(`Erstellt am: ${viewModel.createdAtFormatted}`);
+  if (viewModel.sale.table) {
+    lines.push(`Tisch: ${viewModel.sale.table.label ?? viewModel.sale.table.tableId ?? '—'}`);
+    if (viewModel.sale.table.areaLabel) {
+      lines.push(`Bereich: ${viewModel.sale.table.areaLabel}`);
+    }
+  }
+  if (viewModel.sale.table?.waiterId || viewModel.sale.waiterId) {
+    lines.push(`Service: ${viewModel.sale.table?.waiterId ?? viewModel.sale.waiterId}`);
+  }
   lines.push('');
   lines.push('Positionen:');
   viewModel.sale.items.forEach(item => {
@@ -157,6 +201,17 @@ export function renderReceiptPdf(viewModel: ReceiptViewModel) {
     }
   }
   lines.push('');
+  if (viewModel.sale.courses?.length) {
+    lines.push('Kursfolge:');
+    viewModel.sale.courses.forEach(course => {
+      const served = course.servedAt ? ` – serviert ${new Date(course.servedAt).toLocaleString('de-DE')}` : '';
+      lines.push(`• ${course.name} (${course.status})${served}`);
+      course.items.forEach(item => {
+        lines.push(`   · ${item.quantity}× ${item.name}`);
+      });
+    });
+    lines.push('');
+  }
   lines.push(`Support: ${viewModel.supportEmail}`);
 
   return buildSimplePdf(viewModel.businessName, lines);

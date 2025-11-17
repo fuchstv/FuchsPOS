@@ -62,6 +62,17 @@ export type PaymentLineItem = {
   quantity: number;
 };
 
+export type CourseStatus = 'QUEUED' | 'PREPPING' | 'SERVED';
+
+export type CourseEntry = {
+  id: string;
+  name: string;
+  sequence?: number;
+  status: CourseStatus;
+  servedAt?: string | null;
+  items: PaymentLineItem[];
+};
+
 /**
  * Defines the payload for creating a new payment request.
  */
@@ -76,6 +87,13 @@ export type PaymentRequestPayload = {
   customerEmail?: string;
   /** The unique identifier of the POS terminal making the request. */
   terminalId: string;
+  /** Optional metadata for table service workflows. */
+  tableId?: string;
+  tableLabel?: string;
+  areaLabel?: string;
+  waiterId?: string;
+  tableTabId?: number;
+  courses?: CourseEntry[];
 };
 
 /**
@@ -234,6 +252,15 @@ export type SaleRecord = {
   createdAt: string;
   items: PaymentLineItem[];
   reference?: string | null;
+  table?: {
+    tabId?: number | null;
+    tableId?: string | null;
+    label?: string | null;
+    areaLabel?: string | null;
+    waiterId?: string | null;
+  } | null;
+  waiterId?: string | null;
+  courses?: CourseEntry[];
   /** Fiscalization data required for legal compliance (e.g., TSE in Germany). */
   fiscalization?: {
     tenantId: string;
@@ -254,6 +281,42 @@ export type SaleRecord = {
   documents?: DeliveryDocument[];
   cashEvents?: CashEventRecord[];
   preorder?: PreorderSummary | null;
+};
+
+export type TableCheck = {
+  id: string;
+  label: string;
+  items: CartItem[];
+};
+
+export type TableTabStatus = 'OPEN' | 'CLOSED';
+
+export type TableTabRecord = {
+  id: number;
+  tableId: string;
+  label: string;
+  areaLabel?: string | null;
+  waiterId?: string | null;
+  guestCount?: number | null;
+  status: TableTabStatus;
+  openedAt: string;
+  closedAt?: string | null;
+  coursePlan: CourseEntry[];
+  checks: TableCheck[];
+};
+
+export type CreateTableTabPayload = {
+  tableId: string;
+  label: string;
+  areaLabel?: string;
+  waiterId?: string;
+  guestCount?: number;
+  coursePlan?: CourseEntry[];
+  checks?: TableCheck[];
+};
+
+export type UpdateTableTabPayload = Partial<CreateTableTabPayload> & {
+  status?: TableTabStatus;
 };
 
 /**

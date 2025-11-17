@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import api from '../../api/client';
 import { fetchReceiptDocument } from '../../api/pos';
 import { usePosStore } from '../../store/posStore';
-import type { PaymentMethod } from '../../store/types';
+import type { PaymentMethod, TableCheck } from '../../store/types';
 import { usePosRealtime } from '../../realtime/usePosRealtime';
 import { CashClosingPanel } from './components/CashClosingPanel';
 
@@ -54,6 +54,14 @@ export default function PosDashboard() {
     updatePreorder,
     addCashEvent,
     applyRemoteSale,
+    tables,
+    activeTableId,
+    selectTable,
+    loadTables,
+    createTableTab,
+    splitCheck,
+    mergeChecks,
+    markCourseServed,
   } = usePosStore();
 
   const [customerEmail, setCustomerEmail] = useState('');
@@ -63,6 +71,10 @@ export default function PosDashboard() {
   const [processingMethod, setProcessingMethod] = useState<PaymentMethod | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [activeDownloadFormat, setActiveDownloadFormat] = useState<'pdf' | 'html' | null>(null);
+  const [newTableLabel, setNewTableLabel] = useState('');
+  const [newTableCode, setNewTableCode] = useState('');
+  const [newTableArea, setNewTableArea] = useState('');
+  const [newTableWaiter, setNewTableWaiter] = useState('');
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -120,6 +132,22 @@ export default function PosDashboard() {
   );
 
   const safePreorders = useMemo(() => (Array.isArray(preorders) ? preorders : []), [preorders]);
+  const activeTable = useMemo(
+    () => tables.find(table => table.id === activeTableId) ?? null,
+    [tables, activeTableId],
+  );
+  const resolveCheckTotal = useMemo(
+    () =>
+      (check: TableCheck) =>
+        check.items.reduce((sum, item) => {
+          const product = catalog.find(productItem => productItem.id === item.id);
+          if (!product) {
+            return sum;
+          }
+          return sum + product.price * item.quantity;
+        }, 0),
+    [catalog],
+  );
 
   const formatHealthValue = (value?: string | null, fallback: string = 'UNBEKANNT') =>
     typeof value === 'string' && value.trim() ? value.toUpperCase() : fallback;
@@ -154,6 +182,17 @@ export default function PosDashboard() {
     }
   };
 
+  const formatCourseStatus = (status: string) => {
+    switch (status) {
+      case 'SERVED':
+        return 'Serviert';
+      case 'PREPPING':
+        return 'In Vorbereitung';
+      default:
+        return 'Geplant';
+    }
+  };
+
   const formatRetryInfo = (payment: (typeof queuedPayments)[number]) => {
     if (payment.status === 'pending') {
       if (payment.nextRetryAt) {
@@ -180,6 +219,12 @@ export default function PosDashboard() {
   useEffect(() => {
     void initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    if (!tables.length) {
+      void loadTables();
+    }
+  }, [tables.length, loadTables]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -340,6 +385,25 @@ export default function PosDashboard() {
     }
   };
 
+  const handleCreateTable = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!newTableLabel.trim() || !newTableCode.trim()) {
+      return;
+    }
+    void createTableTab({
+      tableId: newTableCode.trim(),
+      label: newTableLabel.trim(),
+      areaLabel: newTableArea.trim() || undefined,
+      waiterId: newTableWaiter.trim() || undefined,
+      checks: [{ id: `check-${Date.now()}`, label: 'Check 1', items: [] }],
+    }).then(() => {
+      setNewTableLabel('');
+      setNewTableCode('');
+      setNewTableArea('');
+      setNewTableWaiter('');
+    });
+  };
+
   useEffect(() => {
     const fetchHealth = async () => {
       try {
@@ -372,12 +436,209 @@ export default function PosDashboard() {
             <span className="rounded-full bg-brand/20 px-3 py-1 font-medium text-brand">
               {currency.format(total)}
             </span>
+            {activeTable && (
+              <span className="hidden rounded-full bg-indigo-500/20 px-3 py-1 font-medium text-indigo-200 sm:inline-flex">
+                Tisch {activeTable.label}
+              </span>
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 md:flex-row">
         <section className="flex-1 space-y-4">
+          <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-950/60 p-5">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-200">Gastraum &amp; Tabs</h2>
+                <p className="text-sm text-slate-400">Tische verwalten, Checks splitten und Kurse steuern.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => loadTables()}
+                className="mt-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-brand hover:text-brand sm:mt-0"
+              >
+                Aktualisieren
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {tables.length === 0 ? (
+                <p className="text-sm text-slate-400">Aktuell keine offenen Tabs.</p>
+              ) : (
+                tables.map(table => (
+                  <button
+                    key={table.id}
+                    type="button"
+                    onClick={() => selectTable(table.id)}
+                    className={`rounded-2xl border px-3 py-2 text-left text-sm transition focus:outline-none focus:ring-2 focus:ring-brand ${
+                      activeTableId === table.id
+                        ? 'border-brand bg-brand/10 text-brand'
+                        : 'border-white/10 bg-white/5 text-slate-200 hover:border-brand/60'
+                    }`}
+                  >
+                    <p className="font-semibold">{table.label}</p>
+                    <p className="text-xs text-slate-400">
+                      {table.areaLabel ?? 'Bereich offen'} · {table.checks.length} Check
+                      {table.checks.length === 1 ? '' : 's'}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleCreateTable} className="grid gap-2 text-sm sm:grid-cols-2">
+              <input
+                type="text"
+                value={newTableCode}
+                onChange={event => setNewTableCode(event.target.value)}
+                placeholder="Tisch-ID (z. B. A1)"
+                className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none"
+              />
+              <input
+                type="text"
+                value={newTableLabel}
+                onChange={event => setNewTableLabel(event.target.value)}
+                placeholder="Bezeichnung"
+                className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none"
+              />
+              <input
+                type="text"
+                value={newTableArea}
+                onChange={event => setNewTableArea(event.target.value)}
+                placeholder="Bereich"
+                className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTableWaiter}
+                  onChange={event => setNewTableWaiter(event.target.value)}
+                  placeholder="Service/Waiter"
+                  className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-950 transition hover:bg-brand-dark"
+                >
+                  Tisch öffnen
+                </button>
+              </div>
+            </form>
+            {activeTable ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+                  <p className="text-base font-semibold text-slate-100">Tisch {activeTable.label}</p>
+                  <p className="text-xs text-slate-400">
+                    {activeTable.areaLabel ?? 'Bereich offen'} · Service {activeTable.waiterId ?? 'unzugewiesen'}
+                  </p>
+                </div>
+                <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-sm font-semibold text-slate-100">Checks</h3>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => splitCheck(activeTable.id)}
+                        className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 transition hover:border-brand hover:text-brand"
+                      >
+                        Check teilen
+                      </button>
+                      <button
+                        type="button"
+                        disabled={activeTable.checks.length <= 1}
+                        onClick={() => mergeChecks(activeTable.id)}
+                        className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200 transition hover:border-brand hover:text-brand disabled:opacity-40"
+                      >
+                        Checks zusammenführen
+                      </button>
+                    </div>
+                  </div>
+                  {activeTable.checks.length === 0 ? (
+                    <p className="text-xs text-slate-400">Noch keine Positionen erfasst.</p>
+                  ) : (
+                    activeTable.checks.map(check => (
+                      <div key={check.id} className="rounded-xl border border-white/10 p-3">
+                        <div className="flex items-center justify-between text-sm font-semibold text-slate-100">
+                          <p>{check.label}</p>
+                          <span>{currency.format(resolveCheckTotal(check))}</span>
+                        </div>
+                        <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                          {check.items.length === 0 ? (
+                            <li>Keine Artikel zugewiesen.</li>
+                          ) : (
+                            check.items.map(item => {
+                              const product = catalog.find(productItem => productItem.id === item.id);
+                              const name = product?.name ?? item.id;
+                              return (
+                                <li key={`${check.id}-${item.id}`} className="flex items-center justify-between">
+                                  <span>
+                                    {item.quantity} × {name}
+                                  </span>
+                                  {product && (
+                                    <span className="text-slate-300">
+                                      {currency.format(product.price * item.quantity)}
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            })
+                          )}
+                        </ul>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="space-y-2 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-100">Kurse</h3>
+                    <p className="text-xs text-indigo-200/80">{activeTable.coursePlan?.length ?? 0} geplant</p>
+                  </div>
+                  {activeTable.coursePlan && activeTable.coursePlan.length > 0 ? (
+                    activeTable.coursePlan.map(course => (
+                      <div key={course.id} className="rounded-xl border border-indigo-300/30 bg-indigo-900/20 p-3 text-xs text-indigo-100">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-indigo-100">{course.name}</p>
+                            <p className="text-[11px] text-indigo-200/80">
+                              {formatCourseStatus(course.status)}
+                              {course.servedAt
+                                ? ` · ${new Date(course.servedAt).toLocaleTimeString('de-DE', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}`
+                                : ''}
+                            </p>
+                          </div>
+                          {course.status !== 'SERVED' && (
+                            <button
+                              type="button"
+                              onClick={() => markCourseServed(activeTable.id, course.id)}
+                              className="rounded-full border border-indigo-300/40 px-3 py-1 text-[11px] font-semibold text-indigo-100 transition hover:border-white"
+                            >
+                              Als serviert markieren
+                            </button>
+                          )}
+                        </div>
+                        <ul className="mt-2 space-y-1 text-[11px] text-indigo-100/80">
+                          {course.items.map(item => (
+                            <li key={`${course.id}-${item.name}`} className="flex items-center justify-between">
+                              <span>
+                                {item.quantity} × {item.name}
+                              </span>
+                              <span>{currency.format(item.unitPrice * item.quantity)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-indigo-200/80">Keine Kursplanung hinterlegt.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">Wähle einen Tisch aus oder eröffne einen neuen Tab.</p>
+            )}
+          </div>
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-200">Schnellwahl</h2>
             <button

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Sale as SaleModel } from '@prisma/client';
+import { Prisma, Sale as SaleModel, TableTab as TableTabModel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaymentDto, PaymentMethod } from './dto/create-payment.dto';
@@ -14,9 +14,30 @@ import { FiscalizationService } from '../fiscal/fiscalization.service';
 import { PreordersService } from '../preorders/preorders.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
+import { CreateTableTabDto, TableTabStatusDto, UpdateTableTabDto } from './dto/table-tab.dto';
 
 const LATEST_SALE_TTL_SECONDS = 60 * 5;
 const CART_TTL_SECONDS = 60 * 60;
+
+type TableCheckPayload = {
+  id: string;
+  label: string;
+  items: Array<{ id: string; quantity: number }>;
+};
+
+type TableTabPayload = {
+  id: number;
+  tableId: string;
+  label: string;
+  areaLabel?: string | null;
+  waiterId?: string | null;
+  guestCount?: number | null;
+  status: TableTabStatusDto;
+  openedAt: Date;
+  closedAt?: Date | null;
+  checks: TableCheckPayload[];
+  coursePlan?: SalePayload['courses'];
+};
 
 /**
  * Service for handling Point of Sale (POS) operations.
@@ -80,6 +101,77 @@ export class PosService {
     const ttlSeconds = ttl >= 0 ? ttl : null;
 
     return { cart, ttlSeconds };
+  }
+
+  async listTables() {
+    const tables = await this.prisma.tableTab.findMany({ orderBy: { openedAt: 'asc' } });
+    return { tables: tables.map(table => this.toTableTabPayload(table)) };
+  }
+
+  async openTable(dto: CreateTableTabDto) {
+    const table = await this.prisma.tableTab.create({
+      data: {
+        tableId: dto.tableId,
+        label: dto.label,
+        areaLabel: dto.areaLabel ?? null,
+        waiterId: dto.waiterId ?? null,
+        guestCount: dto.guestCount ?? null,
+        checks: (dto.checks ?? []) as Prisma.InputJsonValue,
+        coursePlan: (dto.coursePlan ?? []) as Prisma.InputJsonValue,
+      },
+    });
+
+    const payload = this.toTableTabPayload(table);
+    this.realtime.broadcast('table.updated', { table: payload });
+
+    return {
+      message: 'Tisch geöffnet',
+      table: payload,
+    };
+  }
+
+  async updateTable(id: number, dto: UpdateTableTabDto) {
+    const table = await this.prisma.tableTab.update({
+      where: { id },
+      data: {
+        label: dto.label ?? undefined,
+        areaLabel: dto.areaLabel ?? undefined,
+        waiterId: dto.waiterId ?? undefined,
+        guestCount: typeof dto.guestCount === 'number' ? dto.guestCount : undefined,
+        checks: dto.checks ? (dto.checks as Prisma.InputJsonValue) : undefined,
+        coursePlan: dto.coursePlan ? (dto.coursePlan as Prisma.InputJsonValue) : undefined,
+        status: dto.status ?? undefined,
+        closedAt:
+          dto.status === TableTabStatusDto.CLOSED
+            ? new Date()
+            : dto.status === TableTabStatusDto.OPEN
+            ? null
+            : undefined,
+      },
+    });
+
+    const payload = this.toTableTabPayload(table);
+    this.realtime.broadcast('table.updated', { table: payload });
+
+    return {
+      message: 'Tisch aktualisiert',
+      table: payload,
+    };
+  }
+
+  async closeTable(id: number) {
+    const table = await this.prisma.tableTab.update({
+      where: { id },
+      data: { status: TableTabStatusDto.CLOSED, closedAt: new Date() },
+    });
+
+    const payload = this.toTableTabPayload(table);
+    this.realtime.broadcast('table.closed', { table: payload });
+
+    return {
+      message: 'Tisch geschlossen',
+      table: payload,
+    };
   }
 
   /**
@@ -362,6 +454,12 @@ export class PosService {
         items: dto.items as unknown as Prisma.InputJsonValue,
         reference: dto.reference ?? null,
         locationId: dto.locationId ?? null,
+        tableId: dto.tableId ?? null,
+        tableLabel: dto.tableLabel ?? null,
+        areaLabel: dto.areaLabel ?? null,
+        waiterId: dto.waiterId ?? null,
+        coursePlan: dto.courses ? (dto.courses as Prisma.InputJsonValue) : null,
+        tableTabId: dto.tableTabId ?? null,
         fiscalMetadata: options?.fiscalization,
         refundForId: options?.refundForId ?? null,
         refundReason: options?.refundReason ?? null,
@@ -387,6 +485,25 @@ export class PosService {
     };
   }
 
+  private toTableTabPayload(tab: TableTabModel): TableTabPayload {
+    const rawChecks = Array.isArray(tab.checks) ? (tab.checks as TableCheckPayload[]) : [];
+    const rawCourses = (tab.coursePlan as SalePayload['courses']) ?? undefined;
+
+    return {
+      id: tab.id,
+      tableId: tab.tableId,
+      label: tab.label,
+      areaLabel: tab.areaLabel,
+      waiterId: tab.waiterId,
+      guestCount: tab.guestCount,
+      status: tab.status as TableTabStatusDto,
+      openedAt: tab.openedAt,
+      closedAt: tab.closedAt,
+      checks: rawChecks,
+      coursePlan: rawCourses,
+    };
+  }
+
   /**
    * Converts a sale model from the database to a base SalePayload object.
    * @param sale - The sale model.
@@ -394,6 +511,17 @@ export class PosService {
    */
   private toBaseSalePayload(sale: SaleModel): SalePayload {
     const items = (sale.items as SalePayload['items']) ?? [];
+    const table =
+      sale.tableTabId || sale.tableId || sale.tableLabel
+        ? {
+            tabId: sale.tableTabId,
+            tableId: sale.tableId,
+            label: sale.tableLabel,
+            areaLabel: sale.areaLabel,
+            waiterId: sale.waiterId,
+          }
+        : undefined;
+    const courses = (sale.coursePlan as SalePayload['courses']) ?? undefined;
 
     return {
       id: sale.id,
@@ -405,6 +533,9 @@ export class PosService {
       items,
       reference: sale.reference,
       locationId: sale.locationId,
+      table,
+      waiterId: sale.waiterId,
+      courses,
       fiscalization: sale.fiscalMetadata
         ? (sale.fiscalMetadata as SalePayload['fiscalization'])
         : undefined,

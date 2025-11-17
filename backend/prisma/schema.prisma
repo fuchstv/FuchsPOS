@@ -25,6 +25,12 @@ model Sale {
   items         Json
   reference     String?
   locationId    String?
+  tableId       String?
+  tableLabel    String?
+  areaLabel     String?
+  waiterId      String?
+  coursePlan    Json?
+  tableTabId    Int?
   createdAt     DateTime    @default(now())
   fiscalMetadata Json?
   refundForId   Int?
@@ -35,8 +41,33 @@ model Sale {
   preorder      Preorder?
   refundFor     Sale?       @relation("SaleRefunds", fields: [refundForId], references: [id], onDelete: SetNull)
   refunds       Sale[]      @relation("SaleRefunds")
+  tableTab      TableTab?   @relation(fields: [tableTabId], references: [id], onDelete: SetNull)
 
   @@index([refundForId])
+  @@index([tableTabId])
+}
+
+enum TableTabStatus {
+  OPEN
+  CLOSED
+}
+
+model TableTab {
+  id         Int            @id @default(autoincrement())
+  tableId    String
+  label      String
+  areaLabel  String?
+  waiterId   String?
+  guestCount Int?
+  status     TableTabStatus @default(OPEN)
+  coursePlan Json?
+  checks     Json?
+  openedAt   DateTime       @default(now())
+  closedAt   DateTime?
+  sales      Sale[]
+
+  @@index([status])
+  @@index([tableId])
 }
 
 enum PreorderStatus {
