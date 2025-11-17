@@ -37,6 +37,14 @@ import {
   removeQueuedPayment as removeQueuedPaymentRecord,
 } from './offlineStorage';
 
+declare global {
+  interface GlobalThis {
+    __FUCHSPOS_ENV__?: {
+      VITE_POS_TENANT_ID?: string;
+    };
+  }
+}
+
 const defaultCatalog: CatalogItem[] = [
   { id: 'espresso', name: 'Espresso', price: 2.5, category: 'Beverage', ean: '4006381333931' },
   { id: 'flat-white', name: 'Flat White', price: 3.2, category: 'Beverage', ean: '4012345678901' },
@@ -101,6 +109,33 @@ const POS_TENANT_STORAGE_KEY = 'fuchspos.posTenantId';
 
 let cachedTenantId: string | null = null;
 
+type TenantEnvSource = {
+  VITE_POS_TENANT_ID?: string;
+};
+
+const readTenantIdFromEnv = () => {
+  const envSource = ((): TenantEnvSource | null => {
+    try {
+      const meta = import.meta as ImportMeta & { env?: TenantEnvSource };
+      return meta.env ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const candidate = envSource?.VITE_POS_TENANT_ID?.trim();
+  if (candidate) {
+    return candidate;
+  }
+
+  const globalCandidate = globalThis.__FUCHSPOS_ENV__?.VITE_POS_TENANT_ID?.trim();
+  if (globalCandidate) {
+    return globalCandidate;
+  }
+
+  return '';
+};
+
 type ResolveTenantOptions = {
   /** Forces a fresh lookup from storage/context even if cached. */
   forceRefresh?: boolean;
@@ -111,7 +146,7 @@ const resolveTenantIdFromContext = (options?: ResolveTenantOptions) => {
     return cachedTenantId;
   }
 
-  const envTenantId = (import.meta.env.VITE_POS_TENANT_ID ?? '').trim();
+  const envTenantId = readTenantIdFromEnv();
   if (typeof window === 'undefined') {
     cachedTenantId = envTenantId || null;
     return envTenantId;
@@ -1119,3 +1154,14 @@ export const usePosStore = create<PosStore>((set, get) => {
     recordCashWithdrawal: async input => submitCashAdjustment(createCashWithdrawalEvent, input),
   };
 });
+
+export const __testables = {
+  findCatalogProductByCode,
+  normalizeBarcode,
+  resolveTenantIdFromContext,
+  persistTenantPreference,
+  POS_TENANT_STORAGE_KEY,
+  resetTenantCache: () => {
+    cachedTenantId = null;
+  },
+};
