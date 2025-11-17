@@ -32,6 +32,7 @@ export type CashEventPayload = {
   metadata?: Record<string, any>;
   sale?: { id: number; receiptNo: string } | null;
   preorder?: { id: number; externalReference: string } | null;
+  tenantId?: string | null;
 };
 
 /**
@@ -117,6 +118,7 @@ export class PreordersService {
     const events = await this.prisma.cashEvent.findMany({
       where: {
         OR: [
+          { tenantId },
           { preorder: { tenantId } },
           { sale: { preorder: { tenantId } } },
         ],
@@ -317,6 +319,7 @@ export class PreordersService {
           preorderId,
           type: CashEventType.PREORDER_READY,
           metadata: { ...options?.metadata, documentNumber: document.documentNumber },
+          tenantId: existing.tenantId ?? undefined,
         });
         events.push(event);
       }
@@ -335,6 +338,7 @@ export class PreordersService {
             ...options?.metadata,
             documentNumber: document.documentNumber,
           },
+          tenantId: existing.tenantId ?? undefined,
         });
         events.push(event);
       }
@@ -360,24 +364,29 @@ export class PreordersService {
    * @param reference - An optional reference to a pre-order.
    */
   async handleSaleCompletion(sale: Sale, reference?: string | null) {
+    const normalizedReference = reference?.trim();
+    const preorder = normalizedReference
+      ? await this.prisma.preorder.findUnique({ where: { externalReference: normalizedReference } })
+      : null;
+
     const saleEvent = await this.createCashEvent(this.prisma, {
       saleId: sale.id,
       type: CashEventType.SALE_COMPLETED,
       metadata: {
-        reference: reference ?? null,
+        reference: normalizedReference ?? null,
         receiptNo: sale.receiptNo,
         total: Number(sale.total),
       },
+      tenantId: preorder?.tenantId ?? undefined,
     });
     this.emitCashEvent(saleEvent);
 
-    if (!reference) {
+    if (!normalizedReference) {
       return;
     }
 
-    const preorder = await this.prisma.preorder.findUnique({ where: { externalReference: reference } });
     if (!preorder) {
-      this.logger.warn(`Kein Vorauftrag für Referenz ${reference} gefunden.`);
+      this.logger.warn(`Kein Vorauftrag für Referenz ${normalizedReference} gefunden.`);
       return;
     }
 
@@ -391,6 +400,29 @@ export class PreordersService {
       saleId: sale.id,
       metadata: { receiptNo: sale.receiptNo },
     });
+  }
+
+  /**
+   * Records a manual cash adjustment (deposit or withdrawal) for the given tenant.
+   */
+  async recordCashAdjustment(input: {
+    tenantId: string;
+    amount: number;
+    reason: string;
+    operatorId: string;
+    type: CashEventType.CASH_DEPOSIT | CashEventType.CASH_WITHDRAWAL;
+  }): Promise<CashEventPayload> {
+    const event = await this.createCashEvent(this.prisma, {
+      type: input.type,
+      tenantId: input.tenantId,
+      metadata: {
+        amount: Number(input.amount.toFixed(2)),
+        reason: input.reason,
+        operatorId: input.operatorId,
+      },
+    });
+    this.emitCashEvent(event);
+    return event;
   }
 
   /**
@@ -484,6 +516,7 @@ export class PreordersService {
       preorderId?: number;
       type: CashEventType;
       metadata?: Record<string, any> | null;
+      tenantId?: string;
     },
   ): Promise<CashEventPayload> {
     const event = await client.cashEvent.create({
@@ -492,6 +525,7 @@ export class PreordersService {
         preorderId: data.preorderId ?? null,
         type: data.type,
         metadata: data.metadata ? (data.metadata as Prisma.InputJsonValue) : undefined,
+        tenantId: data.tenantId ?? null,
       },
       include: {
         sale: { select: { id: true, receiptNo: true } },
@@ -567,6 +601,7 @@ export class PreordersService {
       metadata: (event.metadata as Record<string, any>) ?? undefined,
       sale: event.sale ?? null,
       preorder: event.preorder ?? null,
+      tenantId: event.tenantId ?? null,
     };
   }
 

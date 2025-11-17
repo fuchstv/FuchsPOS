@@ -1,6 +1,11 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
-import type { CreateTableTabPayload, TableTabRecord, UpdateTableTabPayload } from '../store/types';
+import type {
+  CashEventRecord,
+  CreateTableTabPayload,
+  TableTabRecord,
+  UpdateTableTabPayload,
+} from '../store/types';
 
 export function fetchReceiptDocument(
   saleId: number,
@@ -26,4 +31,19 @@ export function updatePosTable(id: number, payload: UpdateTableTabPayload) {
 
 export function closePosTable(id: number) {
   return api.post<{ table: TableTabRecord }>(`/pos/tables/${id}/close`);
+}
+
+export type CashAdjustmentRequest = {
+  tenantId: string;
+  amount: number;
+  reason: string;
+  operatorId: string;
+};
+
+export function createCashDepositEvent(payload: CashAdjustmentRequest) {
+  return api.post<{ event: CashEventRecord }>(`/pos/cash-events/deposit`, payload);
+}
+
+export function createCashWithdrawalEvent(payload: CashAdjustmentRequest) {
+  return api.post<{ event: CashEventRecord }>(`/pos/cash-events/withdrawal`, payload);
 }

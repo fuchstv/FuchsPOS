@@ -7,6 +7,7 @@ import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { CashClosingService } from './cash-closing.service';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
 import { CreateTableTabDto, UpdateTableTabDto } from './dto/table-tab.dto';
+import { CreateCashAdjustmentDto } from './dto/cash-adjustment.dto';
 
 /**
  * Controller for Point of Sale (POS) operations.
@@ -155,6 +156,16 @@ export class PosController {
     const parsed = limit ? Number(limit) : undefined;
     const take = parsed && !Number.isNaN(parsed) ? parsed : undefined;
     return this.posService.listCashEvents(normalizedTenantId, take);
+  }
+
+  @Post('cash-events/deposit')
+  recordCashDeposit(@Body() dto: CreateCashAdjustmentDto) {
+    return this.posService.recordCashDeposit(dto);
+  }
+
+  @Post('cash-events/withdrawal')
+  recordCashWithdrawal(@Body() dto: CreateCashAdjustmentDto) {
+    return this.posService.recordCashWithdrawal(dto);
   }
 
   /**

@@ -62,6 +62,9 @@ export default function PosDashboard() {
     splitCheck,
     mergeChecks,
     markCourseServed,
+    recordCashDeposit,
+    recordCashWithdrawal,
+    tenantId,
   } = usePosStore();
 
   const [customerEmail, setCustomerEmail] = useState('');
@@ -75,6 +78,12 @@ export default function PosDashboard() {
   const [newTableCode, setNewTableCode] = useState('');
   const [newTableArea, setNewTableArea] = useState('');
   const [newTableWaiter, setNewTableWaiter] = useState('');
+  const [cashAmount, setCashAmount] = useState('');
+  const [cashReason, setCashReason] = useState('');
+  const [cashOperatorId, setCashOperatorId] = useState('');
+  const [cashEventStatus, setCashEventStatus] = useState<'idle' | 'deposit' | 'withdrawal'>('idle');
+  const [cashEventError, setCashEventError] = useState<string | null>(null);
+  const [cashEventMessage, setCashEventMessage] = useState<string | null>(null);
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -130,6 +139,9 @@ export default function PosDashboard() {
       ),
     [cashEvents],
   );
+  const tenantConfigured = Boolean(tenantId);
+  const isDepositBusy = cashEventStatus === 'deposit';
+  const isWithdrawalBusy = cashEventStatus === 'withdrawal';
 
   const safePreorders = useMemo(() => (Array.isArray(preorders) ? preorders : []), [preorders]);
   const activeTable = useMemo(
@@ -177,6 +189,10 @@ export default function PosDashboard() {
         return 'Vorbestellung abgeholt';
       case 'SALE_COMPLETED':
         return 'Verkauf abgeschlossen';
+      case 'CASH_DEPOSIT':
+        return 'Bareinzahlung';
+      case 'CASH_WITHDRAWAL':
+        return 'Barauszahlung';
       default:
         return type;
     }
@@ -284,6 +300,65 @@ export default function PosDashboard() {
       setEmailError(null);
     }
   }, [paymentState, customerEmail]);
+
+  const handleCashAdjustment = async (mode: 'deposit' | 'withdrawal') => {
+    if (cashEventStatus !== 'idle') {
+      return;
+    }
+
+    setCashEventStatus(mode);
+    setCashEventError(null);
+    setCashEventMessage(null);
+
+    const normalizedAmount = Number(cashAmount);
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      setCashEventError('Bitte einen Betrag größer 0 eintragen.');
+      setCashEventStatus('idle');
+      return;
+    }
+
+    if (!cashReason.trim()) {
+      setCashEventError('Eine Begründung ist erforderlich.');
+      setCashEventStatus('idle');
+      return;
+    }
+
+    if (!cashOperatorId.trim()) {
+      setCashEventError('Bitte Bedienerkennung angeben.');
+      setCashEventStatus('idle');
+      return;
+    }
+
+    if (!tenantId) {
+      setCashEventError('Keine Tenant-ID konfiguriert.');
+      setCashEventStatus('idle');
+      return;
+    }
+
+    try {
+      const action = mode === 'deposit' ? recordCashDeposit : recordCashWithdrawal;
+      await action({
+        amount: normalizedAmount,
+        reason: cashReason.trim(),
+        operatorId: cashOperatorId.trim(),
+      });
+      setCashEventMessage(mode === 'deposit' ? 'Einzahlung erfasst.' : 'Auszahlung erfasst.');
+      setCashAmount('');
+      setCashReason('');
+    } catch (error) {
+      const message =
+        error && typeof error === 'object' && 'response' in error && error.response && typeof error.response === 'object' && 'data' in error.response &&
+        error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data &&
+        typeof error.response.data.message === 'string'
+          ? error.response.data.message
+          : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : null;
+      setCashEventError(message ?? 'Kassenbewegung konnte nicht gespeichert werden.');
+    } finally {
+      setCashEventStatus('idle');
+    }
+  };
 
   const handleProcessPayment = (method: PaymentMethod) => {
     setProcessingMethod(method);
@@ -1032,16 +1107,82 @@ export default function PosDashboard() {
               <h3 className="font-semibold text-cyan-100">Live-Kassenevents</h3>
               <span className="text-xs text-cyan-200/80">{sortedCashEvents.length}</span>
             </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={cashAmount}
+                onChange={event => setCashAmount(event.target.value)}
+                placeholder="Betrag (EUR)"
+                className="rounded-lg border border-cyan-300/30 bg-cyan-900/20 px-3 py-2 text-[11px] text-cyan-100 placeholder:text-cyan-200/50 focus:border-cyan-200/70 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={cashReason}
+                onChange={event => setCashReason(event.target.value)}
+                placeholder="Grund"
+                className="rounded-lg border border-cyan-300/30 bg-cyan-900/20 px-3 py-2 text-[11px] text-cyan-100 placeholder:text-cyan-200/50 focus:border-cyan-200/70 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={cashOperatorId}
+                onChange={event => setCashOperatorId(event.target.value)}
+                placeholder="Operator-ID"
+                className="rounded-lg border border-cyan-300/30 bg-cyan-900/20 px-3 py-2 text-[11px] text-cyan-100 placeholder:text-cyan-200/50 focus:border-cyan-200/70 focus:outline-none"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <button
+                type="button"
+                onClick={() => handleCashAdjustment('deposit')}
+                disabled={!tenantConfigured || isDepositBusy}
+                className="rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 font-semibold text-emerald-100 transition hover:border-emerald-200/80 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDepositBusy ? 'Verbucht …' : 'Einzahlung buchen'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCashAdjustment('withdrawal')}
+                disabled={!tenantConfigured || isWithdrawalBusy}
+                className="rounded-lg border border-rose-300/40 bg-rose-500/10 px-3 py-2 font-semibold text-rose-100 transition hover:border-rose-200/80 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isWithdrawalBusy ? 'Verbucht …' : 'Auszahlung buchen'}
+              </button>
+            </div>
+            {!tenantConfigured && (
+              <p className="text-[10px] text-rose-200">
+                Hinterlege eine Tenant-ID, um Kassenbewegungen zu speichern.
+              </p>
+            )}
+            {cashEventError && <p className="text-[10px] text-rose-200">{cashEventError}</p>}
+            {cashEventMessage && !cashEventError && (
+              <p className="text-[10px] text-emerald-200">{cashEventMessage}</p>
+            )}
             {sortedCashEvents.length === 0 ? (
               <p className="text-xs text-cyan-200/80">Noch keine Bewegungen aufgezeichnet.</p>
             ) : (
               <ul className="space-y-2">
                 {sortedCashEvents.slice(0, 8).map(event => {
-                  const metadata = event.metadata as { documentNumber?: unknown } | undefined;
+                  const metadata = event.metadata as {
+                    documentNumber?: unknown;
+                    amount?: unknown;
+                    reason?: unknown;
+                    operatorId?: unknown;
+                  } | undefined;
                   const documentNumber =
                     metadata && typeof metadata.documentNumber !== 'undefined'
                       ? String(metadata.documentNumber)
                       : null;
+                  const rawAmount =
+                    metadata && typeof metadata.amount !== 'undefined'
+                      ? Number(metadata.amount)
+                      : null;
+                  const amount = typeof rawAmount === 'number' && Number.isFinite(rawAmount) ? rawAmount : null;
+                  const reason = metadata && typeof metadata.reason === 'string' ? metadata.reason : null;
+                  const operator = metadata && typeof metadata.operatorId === 'string' ? metadata.operatorId : null;
+                  const isWithdrawal = event.type === 'CASH_WITHDRAWAL';
 
                   return (
                     <li key={event.id} className="rounded-lg border border-cyan-300/30 bg-cyan-900/30 p-2">
@@ -1066,6 +1207,22 @@ export default function PosDashboard() {
                       )}
                       {documentNumber && (
                         <p className="text-[10px] text-cyan-200/70">Beleg {documentNumber}</p>
+                      )}
+                      {amount !== null && (
+                        <p
+                          className={`text-[10px] ${
+                            isWithdrawal ? 'text-rose-200/80' : 'text-emerald-200/80'
+                          }`}
+                        >
+                          Betrag {isWithdrawal ? '−' : '+'}
+                          {currency.format(amount)}
+                        </p>
+                      )}
+                      {reason && (
+                        <p className="text-[10px] text-cyan-200/70">Grund: {reason}</p>
+                      )}
+                      {operator && (
+                        <p className="text-[10px] text-cyan-200/70">Operator: {operator}</p>
                       )}
                     </li>
                   );

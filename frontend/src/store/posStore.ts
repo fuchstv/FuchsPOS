@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import api from '../api/client';
-import { createPosTable, listPosTables, updatePosTable } from '../api/pos';
+import {
+  createCashDepositEvent,
+  createCashWithdrawalEvent,
+  createPosTable,
+  listPosTables,
+  updatePosTable,
+} from '../api/pos';
 import {
   CartItem,
   CatalogItem,
@@ -146,6 +152,12 @@ type ProcessPaymentInput = {
   reference?: string;
 };
 
+type CashAdjustmentInput = {
+  amount: number;
+  reason: string;
+  operatorId: string;
+};
+
 /**
  * Defines the state and actions for the Point of Sale Zustand store.
  */
@@ -218,6 +230,10 @@ type PosStore = {
   mergeChecks: (tableId: number) => Promise<void>;
   /** Marks a course as served and syncs it to the backend. */
   markCourseServed: (tableId: number, courseId: string) => Promise<void>;
+  /** Records a manual cash deposit event. */
+  recordCashDeposit: (input: CashAdjustmentInput) => Promise<CashEventRecord | null>;
+  /** Records a manual cash withdrawal event. */
+  recordCashWithdrawal: (input: CashAdjustmentInput) => Promise<CashEventRecord | null>;
 };
 
 const MAX_CASH_EVENTS = 50;
@@ -503,6 +519,30 @@ export const usePosStore = create<PosStore>((set, get) => {
       tableTabId: activeTable?.id,
       courses: activeTable?.coursePlan?.length ? activeTable.coursePlan : undefined,
     };
+  };
+
+  const submitCashAdjustment = async (
+    request: typeof createCashDepositEvent,
+    adjustment: CashAdjustmentInput,
+  ): Promise<CashEventRecord | null> => {
+    const tenantId = get().tenantId?.trim() || resolveTenantIdFromContext();
+    if (!tenantId) {
+      throw new Error('Keine Tenant-ID konfiguriert.');
+    }
+
+    const payload = {
+      tenantId,
+      amount: Number(adjustment.amount),
+      reason: adjustment.reason.trim(),
+      operatorId: adjustment.operatorId.trim(),
+    };
+
+    const { data } = await request(payload);
+    if (data?.event) {
+      set(state => ({ cashEvents: mergeCashEvents(state.cashEvents, [data.event]) }));
+      return data.event;
+    }
+    return null;
   };
 
   return {
@@ -1018,5 +1058,7 @@ export const usePosStore = create<PosStore>((set, get) => {
         await get().loadTables();
       }
     },
+    recordCashDeposit: async input => submitCashAdjustment(createCashDepositEvent, input),
+    recordCashWithdrawal: async input => submitCashAdjustment(createCashWithdrawalEvent, input),
   };
 });
