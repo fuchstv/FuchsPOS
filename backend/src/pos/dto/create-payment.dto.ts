@@ -4,6 +4,7 @@ import {
   IsArray,
   IsEmail,
   IsEnum,
+  IsISO8601,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -48,6 +49,39 @@ export class LineItemDto {
   @IsNumber()
   @IsPositive()
   quantity!: number;
+}
+
+export enum CourseStatus {
+  QUEUED = 'QUEUED',
+  PREPPING = 'PREPPING',
+  SERVED = 'SERVED',
+}
+
+export class CourseDto {
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  sequence?: number;
+
+  @IsEnum(CourseStatus)
+  status!: CourseStatus;
+
+  @IsOptional()
+  @IsISO8601()
+  servedAt?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
+  items!: LineItemDto[];
 }
 
 /**
@@ -101,4 +135,49 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   locationId?: string;
+
+  /**
+   * Optional reference to the table identifier (e.g., A1) where the sale originates.
+   */
+  @IsOptional()
+  @IsString()
+  tableId?: string;
+
+  /**
+   * Optional human readable table label.
+   */
+  @IsOptional()
+  @IsString()
+  tableLabel?: string;
+
+  /**
+   * Optional area/zone label for dispatch and kitchen routing.
+   */
+  @IsOptional()
+  @IsString()
+  areaLabel?: string;
+
+  /**
+   * Optional waiter/employee identifier assigned to the table.
+   */
+  @IsOptional()
+  @IsString()
+  waiterId?: string;
+
+  /**
+   * Optional reference to an open table tab entity in the backend.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  tableTabId?: number;
+
+  /**
+   * Optional list of courses for sequencing in the kitchen.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CourseDto)
+  courses?: CourseDto[];
 }

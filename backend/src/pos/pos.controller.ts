@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { PosService } from './pos.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -6,6 +6,7 @@ import { SyncCartDto } from './dto/sync-cart.dto';
 import { EmailReceiptDto } from './dto/email-receipt.dto';
 import { CashClosingService } from './cash-closing.service';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
+import { CreateTableTabDto, UpdateTableTabDto } from './dto/table-tab.dto';
 
 /**
  * Controller for Point of Sale (POS) operations.
@@ -58,6 +59,26 @@ export class PosController {
       throw new BadRequestException('Sale ID in body does not match requested resource.');
     }
     return this.posService.refundPayment(dto);
+  }
+
+  @Get('tables')
+  listTables() {
+    return this.posService.listTables();
+  }
+
+  @Post('tables')
+  openTable(@Body() dto: CreateTableTabDto) {
+    return this.posService.openTable(dto);
+  }
+
+  @Patch('tables/:id')
+  updateTable(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTableTabDto) {
+    return this.posService.updateTable(id, dto);
+  }
+
+  @Post('tables/:id/close')
+  closeTable(@Param('id', ParseIntPipe) id: number) {
+    return this.posService.closeTable(id);
   }
 
   /**

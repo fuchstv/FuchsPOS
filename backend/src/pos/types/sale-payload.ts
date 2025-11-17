@@ -17,6 +17,25 @@ export type SaleItemPayload = {
   quantity: number;
 };
 
+export type CourseItemPayload = SaleItemPayload;
+
+export type CoursePayload = {
+  id: string;
+  name: string;
+  sequence?: number;
+  status: 'QUEUED' | 'PREPPING' | 'SERVED' | string;
+  servedAt?: string;
+  items: CourseItemPayload[];
+};
+
+export type TableReferencePayload = {
+  tabId?: number | null;
+  tableId?: string | null;
+  label?: string | null;
+  areaLabel?: string | null;
+  waiterId?: string | null;
+};
+
 /**
  * Represents the digital signature from the fiscalization service.
  */
@@ -91,4 +110,10 @@ export type SalePayload = {
   refundReason?: string | null;
   /** Optional operator reference for refunds. */
   operatorId?: string | null;
+  /** Optional table reference for dine-in workflows. */
+  table?: TableReferencePayload;
+  /** Optional waiter identifier. */
+  waiterId?: string | null;
+  /** Optional course sequencing metadata. */
+  courses?: CoursePayload[];
 };

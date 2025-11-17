@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import api from '../api/client';
+import { createPosTable, listPosTables, updatePosTable } from '../api/pos';
 import {
   CartItem,
   CatalogItem,
@@ -13,6 +14,10 @@ import {
   SaleResponse,
   CartTotals,
   PreorderRecord,
+  CourseEntry,
+  TableTabRecord,
+  CreateTableTabPayload,
+  TableCheck,
 } from './types';
 import {
   enqueuePayment,
@@ -171,6 +176,10 @@ type PosStore = {
   preorders: PreorderRecord[];
   /** A list of recent cash-related events. */
   cashEvents: CashEventRecord[];
+  /** A list of open tables / tabs. */
+  tables: TableTabRecord[];
+  /** Currently selected table tab identifier. */
+  activeTableId: number | null;
   /** Adds an item to the shopping cart. */
   addToCart: (id: string) => void;
   /** Removes an item from the shopping cart. */
@@ -197,6 +206,18 @@ type PosStore = {
   applyRemoteSale: (sale: SaleRecord) => void;
   /** Updates the tenant context manually. */
   setTenantId: (tenantId: string) => void;
+  /** Loads the latest table list from the server. */
+  loadTables: () => Promise<void>;
+  /** Creates a new open table tab. */
+  createTableTab: (payload: CreateTableTabPayload) => Promise<void>;
+  /** Selects the active table tab for routing payments. */
+  selectTable: (tableId: number | null) => void;
+  /** Splits the current check into two separate ones. */
+  splitCheck: (tableId: number) => Promise<void>;
+  /** Merges all checks of a table into one. */
+  mergeChecks: (tableId: number) => Promise<void>;
+  /** Marks a course as served and syncs it to the backend. */
+  markCourseServed: (tableId: number, courseId: string) => Promise<void>;
 };
 
 const MAX_CASH_EVENTS = 50;
@@ -242,6 +263,86 @@ const mergePreorders = (existing: PreorderRecord[], preorder: PreorderRecord): P
     return aDate.localeCompare(bDate);
   });
   return next;
+};
+
+const normalizeCheckItems = (items: TableCheck['items']): TableCheck['items'] =>
+  items
+    .map(item => ({ ...item, quantity: Math.max(0, Math.round(item.quantity)) }))
+    .filter(item => item.quantity > 0);
+
+const splitChecksForTable = (table: TableTabRecord): TableCheck[] | null => {
+  if (!table.checks.length) {
+    return null;
+  }
+  const [first, ...rest] = table.checks;
+  if (first.items.length === 0) {
+    return null;
+  }
+  if (first.items.length === 1 && first.items[0]?.quantity === 1) {
+    return null;
+  }
+
+  const cloned = first.items.map(item => ({ ...item }));
+  const lastIndex = cloned.length - 1;
+  const lastItem = cloned[lastIndex];
+  if (!lastItem) {
+    return null;
+  }
+
+  let moved: TableCheck['items'][number];
+  if (lastItem.quantity > 1) {
+    const movedQty = Math.ceil(lastItem.quantity / 2);
+    cloned[lastIndex] = { ...lastItem, quantity: lastItem.quantity - movedQty };
+    if (cloned[lastIndex].quantity === 0) {
+      cloned.pop();
+    }
+    moved = { id: lastItem.id, quantity: movedQty };
+  } else {
+    cloned.pop();
+    moved = { ...lastItem };
+  }
+
+  const cleaned = normalizeCheckItems(cloned);
+  if (!cleaned.length || !moved.quantity) {
+    return null;
+  }
+
+  const newCheck: TableCheck = {
+    id: `split-${Date.now()}`,
+    label: `${first.label} – Teil ${table.checks.length + 1}`,
+    items: [{ id: moved.id, quantity: moved.quantity }],
+  };
+
+  return [
+    { ...first, items: cleaned },
+    newCheck,
+    ...rest,
+  ];
+};
+
+const mergeChecksForTable = (table: TableTabRecord): TableCheck[] => {
+  if (!table.checks.length) {
+    return [];
+  }
+  const aggregated = new Map<string, number>();
+  table.checks.forEach(check => {
+    check.items.forEach(item => {
+      const current = aggregated.get(item.id) ?? 0;
+      aggregated.set(item.id, current + item.quantity);
+    });
+  });
+
+  const mergedItems = Array.from(aggregated.entries())
+    .map(([id, quantity]) => ({ id, quantity }))
+    .filter(item => item.quantity > 0);
+
+  return [
+    {
+      id: table.checks[0]?.id ?? `check-${Date.now()}`,
+      label: table.checks[0]?.label ?? 'Check 1',
+      items: mergedItems,
+    },
+  ];
 };
 
 const applySaleEffects = (state: Pick<PosStore, 'cashEvents' | 'preorders'>, sale: SaleRecord) => {
@@ -374,7 +475,7 @@ export const usePosStore = create<PosStore>((set, get) => {
     customerEmail?: string,
     reference?: string,
   ): PaymentRequestPayload => {
-    const { catalog, terminalId } = get();
+    const { catalog, terminalId, tables, activeTableId } = get();
     const items = cart.map(item => {
       const product = catalog.find(productItem => productItem.id === item.id);
       if (!product) {
@@ -387,12 +488,20 @@ export const usePosStore = create<PosStore>((set, get) => {
       };
     });
 
+    const activeTable = tables.find(table => table.id === activeTableId) ?? null;
+
     return {
       items,
       paymentMethod,
       customerEmail,
       reference,
       terminalId,
+      tableId: activeTable?.tableId,
+      tableLabel: activeTable?.label,
+      areaLabel: activeTable?.areaLabel ?? undefined,
+      waiterId: activeTable?.waiterId ?? undefined,
+      tableTabId: activeTable?.id,
+      courses: activeTable?.coursePlan?.length ? activeTable.coursePlan : undefined,
     };
   };
 
@@ -410,6 +519,8 @@ export const usePosStore = create<PosStore>((set, get) => {
     initialized: false,
     preorders: [],
     cashEvents: [],
+    tables: [],
+    activeTableId: null,
     addToCart: inputCode => {
       const state = get();
       const product = findCatalogProductByCode(state.catalog, inputCode);
@@ -566,6 +677,7 @@ export const usePosStore = create<PosStore>((set, get) => {
       let preorders: PreorderRecord[] = [];
       let cashEvents: CashEventRecord[] = [];
       let latestSale: SaleResponse['sale'] | undefined;
+      let tables: TableTabRecord[] = [];
 
       const configuredTenantId = get().tenantId?.trim() || resolveTenantIdFromContext();
       if (configuredTenantId !== get().tenantId) {
@@ -605,6 +717,13 @@ export const usePosStore = create<PosStore>((set, get) => {
         }
       }
 
+      try {
+        const { data } = await listPosTables();
+        tables = data.tables ?? [];
+      } catch (error) {
+        console.warn('Tische konnten nicht geladen werden.', error);
+      }
+
       set({
         catalog,
         cart: restoredCartItems,
@@ -621,6 +740,8 @@ export const usePosStore = create<PosStore>((set, get) => {
         preorders,
         cashEvents,
         latestSale,
+        tables,
+        activeTableId: tables[0]?.id ?? null,
       });
 
       if (queuedPayments.length && (typeof navigator === 'undefined' || navigator.onLine)) {
@@ -809,6 +930,93 @@ export const usePosStore = create<PosStore>((set, get) => {
     setTenantId: tenantId => {
       persistTenantPreference(tenantId.trim());
       set({ tenantId: tenantId.trim() || null });
+    },
+    loadTables: async () => {
+      try {
+        const { data } = await listPosTables();
+        const tables = data.tables ?? [];
+        set(state => ({
+          tables,
+          activeTableId:
+            state.activeTableId && tables.some(table => table.id === state.activeTableId)
+              ? state.activeTableId
+              : tables[0]?.id ?? null,
+        }));
+      } catch (error) {
+        console.warn('Tische konnten nicht geladen werden.', error);
+      }
+    },
+    createTableTab: async payload => {
+      try {
+        const { data } = await createPosTable(payload);
+        set(state => ({
+          tables: [...state.tables, data.table],
+          activeTableId: data.table.id,
+          error: state.error,
+        }));
+      } catch (error) {
+        console.warn('Tisch konnte nicht erstellt werden.', error);
+        set({ error: 'Tisch konnte nicht erstellt werden.' });
+      }
+    },
+    selectTable: tableId => {
+      set({ activeTableId: tableId });
+    },
+    splitCheck: async tableId => {
+      const table = get().tables.find(item => item.id === tableId);
+      if (!table) {
+        return;
+      }
+      const updatedChecks = splitChecksForTable(table);
+      if (!updatedChecks) {
+        console.warn('Check konnte nicht geteilt werden.');
+        return;
+      }
+      set(state => ({
+        tables: state.tables.map(item => (item.id === tableId ? { ...item, checks: updatedChecks } : item)),
+      }));
+      try {
+        await updatePosTable(tableId, { checks: updatedChecks });
+      } catch (error) {
+        console.warn('Check konnte nicht geteilt werden.', error);
+        await get().loadTables();
+      }
+    },
+    mergeChecks: async tableId => {
+      const table = get().tables.find(item => item.id === tableId);
+      if (!table || table.checks.length <= 1) {
+        return;
+      }
+      const mergedChecks = mergeChecksForTable(table);
+      set(state => ({
+        tables: state.tables.map(item => (item.id === tableId ? { ...item, checks: mergedChecks } : item)),
+      }));
+      try {
+        await updatePosTable(tableId, { checks: mergedChecks });
+      } catch (error) {
+        console.warn('Checks konnten nicht zusammengeführt werden.', error);
+        await get().loadTables();
+      }
+    },
+    markCourseServed: async (tableId, courseId) => {
+      const table = get().tables.find(item => item.id === tableId);
+      if (!table) {
+        return;
+      }
+      const updatedCourses = (table.coursePlan ?? []).map(course =>
+        course.id === courseId && course.status !== 'SERVED'
+          ? { ...course, status: 'SERVED', servedAt: new Date().toISOString() }
+          : course,
+      );
+      set(state => ({
+        tables: state.tables.map(item => (item.id === tableId ? { ...item, coursePlan: updatedCourses } : item)),
+      }));
+      try {
+        await updatePosTable(tableId, { coursePlan: updatedCourses });
+      } catch (error) {
+        console.warn('Kursstatus konnte nicht aktualisiert werden.', error);
+        await get().loadTables();
+      }
     },
   };
 });
