@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useState } from 'react';
 import { PriceChangeResponse, recordPriceChange } from '../../../api/inventory';
-import { useInventoryRealtime } from '../InventoryRealtimeContext';
+import { useInventoryRealtime } from '../useInventoryRealtime';
 
 const currencyFormatter = new Intl.NumberFormat('de-DE', {
   style: 'currency',

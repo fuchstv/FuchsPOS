@@ -5,7 +5,7 @@ import {
   GoodsReceiptResponse,
   importGoodsReceipt,
 } from '../../../api/inventory';
-import { useInventoryRealtime } from '../InventoryRealtimeContext';
+import { useInventoryRealtime } from '../useInventoryRealtime';
 
 const quantityFormatter = new Intl.NumberFormat('de-DE', {
   minimumFractionDigits: 0,

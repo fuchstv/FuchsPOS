@@ -8,7 +8,7 @@ import {
   createInventoryCount,
   finalizeInventoryCount,
 } from '../../../api/inventory';
-import { useInventoryRealtime } from '../InventoryRealtimeContext';
+import { useInventoryRealtime } from '../useInventoryRealtime';
 
 const differenceFormatter = new Intl.NumberFormat('de-DE', {
   minimumFractionDigits: 0,

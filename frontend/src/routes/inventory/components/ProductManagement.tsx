@@ -7,7 +7,7 @@ import {
   listProducts,
   updateProduct,
 } from '../../../api/inventory';
-import { useInventoryRealtime } from '../InventoryRealtimeContext';
+import { useInventoryRealtime } from '../useInventoryRealtime';
 
 type EditableImportRow = {
   id: string;
@@ -494,12 +494,21 @@ export default function ProductManagement() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <form onSubmit={handleImportSubmit} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-indigo-400">Artikel importieren</p>
-            <h2 className="text-lg font-semibold text-white">Manueller Katalog</h2>
-            <p className="text-sm text-slate-400">
-              Fügen Sie CSV-/Tabellenzeilen ein, korrigieren Sie Werte direkt in der Tabelle und starten Sie den Import.
-            </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-indigo-400">Artikel importieren</p>
+              <h2 className="text-lg font-semibold text-white">Manueller Katalog</h2>
+              <p className="text-sm text-slate-400">
+                Fügen Sie CSV-/Tabellenzeilen ein, korrigieren Sie Werte direkt in der Tabelle und starten Sie den Import.
+              </p>
+            </div>
+            <a
+              href="/product-import-template.csv"
+              download="product-import-template.csv"
+              className="text-sm text-indigo-400 hover:text-indigo-300 whitespace-nowrap ml-4"
+            >
+              Vorlage herunterladen
+            </a>
           </div>
 
           <label className="space-y-2 text-sm">
