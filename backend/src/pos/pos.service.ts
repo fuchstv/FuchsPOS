@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Sale as SaleModel, TableTab as TableTabModel } from '@prisma/client';
+import { CashEventType, Prisma, Sale as SaleModel, TableTab as TableTabModel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreatePaymentDto, PaymentMethod } from './dto/create-payment.dto';
@@ -15,6 +15,7 @@ import { PreordersService } from '../preorders/preorders.service';
 import { PosRealtimeGateway } from '../realtime/realtime.gateway';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
 import { CreateTableTabDto, TableTabStatusDto, UpdateTableTabDto } from './dto/table-tab.dto';
+import { CreateCashAdjustmentDto } from './dto/cash-adjustment.dto';
 
 const LATEST_SALE_TTL_SECONDS = 60 * 5;
 const CART_TTL_SECONDS = 60 * 60;
@@ -401,6 +402,47 @@ export class PosService {
    */
   async listCashEvents(tenantId: string, limit = 25) {
     return this.preorders.listRecentCashEvents(tenantId, limit);
+  }
+
+  async recordCashDeposit(dto: CreateCashAdjustmentDto) {
+    return this.recordCashAdjustment(CashEventType.CASH_DEPOSIT, dto);
+  }
+
+  async recordCashWithdrawal(dto: CreateCashAdjustmentDto) {
+    return this.recordCashAdjustment(CashEventType.CASH_WITHDRAWAL, dto);
+  }
+
+  private async recordCashAdjustment(
+    type: CashEventType.CASH_DEPOSIT | CashEventType.CASH_WITHDRAWAL,
+    dto: CreateCashAdjustmentDto,
+  ) {
+    const tenantId = dto.tenantId.trim();
+    if (!tenantId) {
+      throw new BadRequestException('tenantId ist erforderlich.');
+    }
+
+    const amount = Number(dto.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('amount muss größer als 0 sein.');
+    }
+
+    const reason = dto.reason.trim();
+    const operatorId = dto.operatorId.trim();
+    const event = await this.preorders.recordCashAdjustment({
+      tenantId,
+      amount: Number(amount.toFixed(2)),
+      reason,
+      operatorId,
+      type,
+    });
+
+    return {
+      message:
+        type === CashEventType.CASH_DEPOSIT
+          ? 'Bareinzahlung erfolgreich verbucht'
+          : 'Barauszahlung erfolgreich verbucht',
+      event,
+    };
   }
 
   /**

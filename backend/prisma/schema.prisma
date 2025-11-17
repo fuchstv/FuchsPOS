@@ -114,6 +114,8 @@ enum CashEventType {
   SALE_COMPLETED
   PREORDER_READY
   PREORDER_PICKED_UP
+  CASH_DEPOSIT
+  CASH_WITHDRAWAL
 }
 
 enum ReportExportType {
@@ -375,6 +377,7 @@ model CashEvent {
   id         Int           @id @default(autoincrement())
   saleId     Int?
   preorderId Int?
+  tenantId   String?
   type       CashEventType
   metadata   Json?
   createdAt  DateTime      @default(now())
@@ -384,6 +387,7 @@ model CashEvent {
   @@index([createdAt])
   @@index([saleId])
   @@index([preorderId])
+  @@index([tenantId])
 }
 
 enum CashClosingType {

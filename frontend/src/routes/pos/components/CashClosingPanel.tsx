@@ -145,6 +145,23 @@ export function CashClosingPanel() {
                   ))}
                 </div>
               )}
+              {closing.cashAdjustments && (
+                <div className="mt-2 space-y-1 rounded-lg border border-amber-200/20 bg-amber-900/30 p-2">
+                  <p className="text-[10px] uppercase tracking-wide text-amber-200/70">Bargeldbewegungen</p>
+                  <div className="flex items-center justify-between text-[11px] text-emerald-100/90">
+                    <span>Einzahlungen</span>
+                    <span>{currency.format(closing.cashAdjustments.deposits ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-rose-100/90">
+                    <span>Entnahmen</span>
+                    <span>{currency.format(closing.cashAdjustments.withdrawals ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-amber-100">
+                    <span>Netto</span>
+                    <span>{currency.format(closing.cashAdjustments.net ?? 0)}</span>
+                  </div>
+                </div>
+              )}
             </article>
           ))
         )}

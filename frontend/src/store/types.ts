@@ -163,7 +163,12 @@ export type DeliveryDocument = {
 /**
  * Defines the types of events that can occur at the cash register.
  */
-export type CashEventType = 'SALE_COMPLETED' | 'PREORDER_READY' | 'PREORDER_PICKED_UP';
+export type CashEventType =
+  | 'SALE_COMPLETED'
+  | 'PREORDER_READY'
+  | 'PREORDER_PICKED_UP'
+  | 'CASH_DEPOSIT'
+  | 'CASH_WITHDRAWAL';
 
 /**
  * Represents a recorded event related to cash register operations.
@@ -175,6 +180,7 @@ export type CashEventRecord = {
   metadata?: Record<string, unknown>;
   sale?: { id: number; receiptNo: string } | null;
   preorder?: { id: number; externalReference: string } | null;
+  tenantId?: string | null;
 };
 
 /**
@@ -189,6 +195,7 @@ export type CashClosingRecord = {
   saleCount: number;
   totalGross: number;
   paymentMethods: Record<string, { total: number; count: number }>;
+  cashAdjustments: { deposits: number; withdrawals: number; net: number };
 };
 
 /**

@@ -1,13 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { CashClosing, CashClosingType, Prisma } from '@prisma/client';
+import { CashClosing, CashClosingType, CashEventType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type PaymentMethodSummary = { total: number; count: number };
+
+type CashAdjustmentSummary = {
+  deposits: number;
+  withdrawals: number;
+  net: number;
+};
 
 type CashClosingSummary = {
   totalGross: number;
   saleCount: number;
   paymentMethods: Record<string, PaymentMethodSummary>;
+  cashAdjustments: CashAdjustmentSummary;
 };
 
 const FINALIZED_SALE_STATUSES: Prisma.SaleStatus[] = ['SUCCESS', 'REFUND', 'REFUNDED'];
@@ -21,6 +28,7 @@ export type CashClosingPayload = {
   saleCount: number;
   totalGross: number;
   paymentMethods: Record<string, PaymentMethodSummary>;
+  cashAdjustments: CashAdjustmentSummary;
 };
 
 @Injectable()
@@ -40,21 +48,33 @@ export class CashClosingService {
     const toDate = new Date();
     const fromDate = await this.resolveFromDate(toDate);
 
-    const sales = await this.prisma.sale.findMany({
-      where: {
-        status: { in: FINALIZED_SALE_STATUSES },
-        createdAt: {
-          gt: fromDate,
-          lte: toDate,
+    const [sales, adjustments] = await Promise.all([
+      this.prisma.sale.findMany({
+        where: {
+          status: { in: FINALIZED_SALE_STATUSES },
+          createdAt: {
+            gt: fromDate,
+            lte: toDate,
+          },
         },
-      },
-      select: {
-        total: true,
-        paymentMethod: true,
-      },
-    });
+        select: {
+          total: true,
+          paymentMethod: true,
+        },
+      }),
+      this.prisma.cashEvent.findMany({
+        where: {
+          type: { in: [CashEventType.CASH_DEPOSIT, CashEventType.CASH_WITHDRAWAL] },
+          createdAt: {
+            gt: fromDate,
+            lte: toDate,
+          },
+        },
+        select: { type: true, metadata: true },
+      }),
+    ]);
 
-    const summary = this.buildSummary(sales);
+    const summary = this.buildSummary(sales, adjustments);
 
     const record = await this.prisma.cashClosing.create({
       data: {
@@ -95,11 +115,13 @@ export class CashClosingService {
 
   private buildSummary(
     sales: Array<{ total: Prisma.Decimal | number; paymentMethod: string }>,
+    adjustments: Array<{ type: CashEventType; metadata: Prisma.JsonValue | null }>,
   ): CashClosingSummary {
     const summary: CashClosingSummary = {
       totalGross: 0,
       saleCount: sales.length,
       paymentMethods: {},
+      cashAdjustments: { deposits: 0, withdrawals: 0, net: 0 },
     };
 
     let runningTotal = 0;
@@ -114,8 +136,46 @@ export class CashClosingService {
     }
 
     summary.totalGross = Number(runningTotal.toFixed(2));
+    summary.cashAdjustments = this.computeAdjustments(adjustments);
+
+    if (summary.cashAdjustments.net !== 0) {
+      const cashBucket = summary.paymentMethods['CASH'] ?? { total: 0, count: 0 };
+      cashBucket.total = Number((cashBucket.total + summary.cashAdjustments.net).toFixed(2));
+      summary.paymentMethods['CASH'] = cashBucket;
+    }
 
     return summary;
+  }
+
+  private computeAdjustments(
+    adjustments: Array<{ type: CashEventType; metadata: Prisma.JsonValue | null }>,
+  ): CashAdjustmentSummary {
+    const result: CashAdjustmentSummary = { deposits: 0, withdrawals: 0, net: 0 };
+
+    for (const adjustment of adjustments) {
+      const amount = this.extractAmount(adjustment.metadata);
+      if (!amount) {
+        continue;
+      }
+      if (adjustment.type === CashEventType.CASH_DEPOSIT) {
+        result.deposits = Number((result.deposits + amount).toFixed(2));
+      }
+      if (adjustment.type === CashEventType.CASH_WITHDRAWAL) {
+        result.withdrawals = Number((result.withdrawals + amount).toFixed(2));
+      }
+    }
+
+    result.net = Number((result.deposits - result.withdrawals).toFixed(2));
+    return result;
+  }
+
+  private extractAmount(metadata: Prisma.JsonValue | null): number {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return 0;
+    }
+    const value = (metadata as Record<string, unknown>).amount;
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
   }
 
   private asNumber(value: Prisma.Decimal | number) {
@@ -127,6 +187,7 @@ export class CashClosingService {
       totalGross: 0,
       saleCount: 0,
       paymentMethods: {},
+      cashAdjustments: { deposits: 0, withdrawals: 0, net: 0 },
     };
 
     return {
@@ -138,6 +199,7 @@ export class CashClosingService {
       saleCount: summary.saleCount,
       totalGross: summary.totalGross,
       paymentMethods: summary.paymentMethods,
+      cashAdjustments: summary.cashAdjustments,
     };
   }
 }
