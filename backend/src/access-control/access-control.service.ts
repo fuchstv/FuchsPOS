@@ -29,8 +29,9 @@ export class AccessControlService {
    * Lists all users with their assigned roles.
    * @returns A promise that resolves to a list of users.
    */
-  async listUsers() {
+  async listUsers(tenantId: string) {
     return this.prisma.user.findMany({
+      where: { tenantId },
       include: {
         roles: {
           include: { role: true },
@@ -44,8 +45,9 @@ export class AccessControlService {
    * Lists all roles with their assigned permissions.
    * @returns A promise that resolves to a list of roles.
    */
-  async listRoles() {
+  async listRoles(tenantId: string) {
     return this.prisma.role.findMany({
+      where: { tenantId },
       include: {
         permissions: {
           include: { permission: true },
@@ -60,8 +62,9 @@ export class AccessControlService {
    * @param limit - The maximum number of audit logs to return.
    * @returns A promise that resolves to a list of audit logs.
    */
-  async listAuditLogs(limit = 100) {
+  async listAuditLogs(tenantId: string, limit = 100) {
     return this.prisma.auditLog.findMany({
+      where: { tenantId },
       take: limit,
       orderBy: { createdAt: 'desc' },
     });
@@ -73,13 +76,14 @@ export class AccessControlService {
    * @param actor - The context of the user performing the action.
    * @returns A promise that resolves to the newly created user.
    */
-  async createUser(dto: CreateUserDto, actor?: AuditContext) {
+  async createUser(dto: CreateUserDto, actor: AuditContext & { tenantId: string }) {
+    const tenantId = actor.tenantId;
     const hashed = this.hashPassword(dto.password);
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
         name: dto.name,
-        tenantId: dto.tenantId,
+        tenantId,
         hashedPassword: hashed,
       },
     });
@@ -90,7 +94,7 @@ export class AccessControlService {
       entityId: String(user.id),
       userId: actor?.userId,
       actorEmail: actor?.actorEmail ?? dto.email,
-      tenantId: dto.tenantId ?? actor?.tenantId,
+      tenantId,
       metadata: { email: dto.email, name: dto.name },
     });
 
@@ -103,9 +107,10 @@ export class AccessControlService {
    * @param actor - The context of the user performing the action.
    * @returns A promise that resolves to the updated user.
    */
-  async updateUserStatus(dto: UpdateUserStatusDto, actor?: AuditContext) {
+  async updateUserStatus(dto: UpdateUserStatusDto, actor: AuditContext & { tenantId: string }) {
+    const existing = await this.ensureUserExists(dto.userId, actor.tenantId);
     const user = await this.prisma.user.update({
-      where: { id: dto.userId },
+      where: { id: existing.id },
       data: { isActive: dto.isActive },
     });
 
@@ -115,7 +120,7 @@ export class AccessControlService {
       entityId: String(dto.userId),
       userId: actor?.userId,
       actorEmail: actor?.actorEmail,
-      tenantId: actor?.tenantId ?? user.tenantId ?? undefined,
+      tenantId: actor.tenantId,
       metadata: { reason: dto.reason },
     });
 
@@ -128,13 +133,14 @@ export class AccessControlService {
    * @param actor - The context of the user performing the action.
    * @returns A promise that resolves to the newly created role.
    */
-  async createRole(dto: CreateRoleDto, actor?: AuditContext) {
+  async createRole(dto: CreateRoleDto, actor: AuditContext & { tenantId: string }) {
+    const tenantId = actor.tenantId;
     const existingPermissions = await this.ensurePermissions(dto.permissions);
     const role = await this.prisma.role.create({
       data: {
         name: dto.name,
         description: dto.description,
-        tenantId: dto.tenantId,
+        tenantId,
         permissions: {
           create: existingPermissions.map((permission) => ({
             permissionId: permission.id,
@@ -153,7 +159,7 @@ export class AccessControlService {
       entityId: String(role.id),
       userId: actor?.userId,
       actorEmail: actor?.actorEmail,
-      tenantId: dto.tenantId ?? actor?.tenantId,
+      tenantId,
       metadata: { permissions: dto.permissions },
     });
 
@@ -166,9 +172,10 @@ export class AccessControlService {
    * @param actor - The context of the user performing the action.
    * @returns A promise that resolves to the updated user with their roles.
    */
-  async assignRole(dto: AssignRoleDto, actor?: AuditContext) {
-    await this.ensureRoleExists(dto.roleId);
-    await this.ensureUserExists(dto.userId);
+  async assignRole(dto: AssignRoleDto, actor: AuditContext & { tenantId: string }) {
+    const tenantId = actor.tenantId;
+    await this.ensureRoleExists(dto.roleId, tenantId);
+    await this.ensureUserExists(dto.userId, tenantId);
 
     await this.prisma.userRole.upsert({
       where: { userId_roleId: { userId: dto.userId, roleId: dto.roleId } },
@@ -182,7 +189,7 @@ export class AccessControlService {
       entityId: `${dto.userId}:${dto.roleId}`,
       userId: actor?.userId,
       actorEmail: actor?.actorEmail,
-      tenantId: actor?.tenantId,
+      tenantId,
       metadata: { userId: dto.userId, roleId: dto.roleId },
     });
 
@@ -200,12 +207,8 @@ export class AccessControlService {
    * @param actor - The context of the user performing the action.
    * @returns A promise that resolves to the updated role with its permissions.
    */
-  async updateRolePermissions(dto: UpdateRolePermissionsDto, actor?: AuditContext) {
-    const role = await this.prisma.role.findUnique({ where: { id: dto.roleId } });
-    if (!role) {
-      throw new NotFoundException(`Role ${dto.roleId} not found`);
-    }
-
+  async updateRolePermissions(dto: UpdateRolePermissionsDto, actor: AuditContext & { tenantId: string }) {
+    const role = await this.ensureRoleExists(dto.roleId, actor.tenantId);
     const permissions = await this.ensurePermissions(dto.permissions);
 
     await this.prisma.rolePermission.deleteMany({ where: { roleId: dto.roleId } });
@@ -224,7 +227,7 @@ export class AccessControlService {
       entityId: String(dto.roleId),
       userId: actor?.userId,
       actorEmail: actor?.actorEmail,
-      tenantId: actor?.tenantId ?? role.tenantId ?? undefined,
+      tenantId: actor.tenantId,
       metadata: { permissions: dto.permissions },
     });
 
@@ -275,9 +278,9 @@ export class AccessControlService {
    * @returns A promise that resolves to the role object.
    * @throws NotFoundException if the role does not exist.
    */
-  private async ensureRoleExists(roleId: number) {
+  private async ensureRoleExists(roleId: number, tenantId?: string) {
     const role = await this.prisma.role.findUnique({ where: { id: roleId } });
-    if (!role) {
+    if (!role || (tenantId && role.tenantId !== tenantId)) {
       throw new NotFoundException(`Role ${roleId} not found`);
     }
     return role;
@@ -289,9 +292,9 @@ export class AccessControlService {
    * @returns A promise that resolves to the user object.
    * @throws NotFoundException if the user does not exist.
    */
-  private async ensureUserExists(userId: number) {
+  private async ensureUserExists(userId: number, tenantId?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    if (!user || (tenantId && user.tenantId !== tenantId)) {
       throw new NotFoundException(`User ${userId} not found`);
     }
     return user;

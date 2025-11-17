@@ -1,5 +1,21 @@
 import api from './client';
 
+const tenantAdminApiKey = import.meta.env.VITE_TENANT_ADMIN_API_KEY ?? 'demo-tenant-admin-key';
+
+function withTenantAdminHeaders(tenantId: string) {
+  const normalized = tenantId.trim();
+  if (!normalized) {
+    throw new Error('Eine Tenant-ID ist für Zugriffskontroll-Aufrufe erforderlich.');
+  }
+
+  return {
+    headers: {
+      'x-tenant-admin-key': tenantAdminApiKey,
+      'x-tenant-id': normalized,
+    },
+  };
+}
+
 /**
  * Represents the association between a role and a permission.
  */
@@ -142,8 +158,11 @@ export interface ListAuditLogOptions {
  * Fetches a list of all users.
  * @returns A promise that resolves to an array of users.
  */
-export async function listUsers() {
-  const { data } = await api.get<AccessControlUserResponse[]>('/access-control/users');
+export async function listUsers(tenantId: string) {
+  const { data } = await api.get<AccessControlUserResponse[]>(
+    '/access-control/users',
+    withTenantAdminHeaders(tenantId),
+  );
   return data.map(normalizeUser);
 }
 
@@ -152,8 +171,13 @@ export async function listUsers() {
  * @param payload - The data for the new user.
  * @returns A promise that resolves to the newly created user.
  */
-export async function createUser(payload: CreateUserPayload) {
-  const { data } = await api.post<AccessControlUserResponse>('/access-control/users', payload);
+export async function createUser(tenantId: string, payload: CreateUserPayload) {
+  const body = { ...payload, tenantId } satisfies CreateUserPayload;
+  const { data } = await api.post<AccessControlUserResponse>(
+    '/access-control/users',
+    body,
+    withTenantAdminHeaders(tenantId),
+  );
   return normalizeUser(data);
 }
 
@@ -162,8 +186,12 @@ export async function createUser(payload: CreateUserPayload) {
  * @param payload - The data for updating the user's status.
  * @returns A promise that resolves to the updated user.
  */
-export async function updateUserStatus(payload: UpdateUserStatusPayload) {
-  const { data } = await api.post<AccessControlUserResponse>('/access-control/users/status', payload);
+export async function updateUserStatus(tenantId: string, payload: UpdateUserStatusPayload) {
+  const { data } = await api.post<AccessControlUserResponse>(
+    '/access-control/users/status',
+    payload,
+    withTenantAdminHeaders(tenantId),
+  );
   return normalizeUser(data);
 }
 
@@ -171,8 +199,11 @@ export async function updateUserStatus(payload: UpdateUserStatusPayload) {
  * Fetches a list of all roles.
  * @returns A promise that resolves to an array of roles.
  */
-export async function listRoles() {
-  const { data } = await api.get<AccessControlRole[]>('/access-control/roles');
+export async function listRoles(tenantId: string) {
+  const { data } = await api.get<AccessControlRole[]>(
+    '/access-control/roles',
+    withTenantAdminHeaders(tenantId),
+  );
   return data;
 }
 
@@ -181,8 +212,13 @@ export async function listRoles() {
  * @param payload - The data for the new role.
  * @returns A promise that resolves to the newly created role.
  */
-export async function createRole(payload: CreateRolePayload) {
-  const { data } = await api.post<AccessControlRole>('/access-control/roles', payload);
+export async function createRole(tenantId: string, payload: CreateRolePayload) {
+  const body = { ...payload, tenantId } satisfies CreateRolePayload;
+  const { data } = await api.post<AccessControlRole>(
+    '/access-control/roles',
+    body,
+    withTenantAdminHeaders(tenantId),
+  );
   return data;
 }
 
@@ -191,8 +227,12 @@ export async function createRole(payload: CreateRolePayload) {
  * @param payload - The data for the role assignment.
  * @returns A promise that resolves to the updated user.
  */
-export async function assignRole(payload: AssignRolePayload) {
-  const { data } = await api.post<AccessControlUserResponse>('/access-control/roles/assign', payload);
+export async function assignRole(tenantId: string, payload: AssignRolePayload) {
+  const { data } = await api.post<AccessControlUserResponse>(
+    '/access-control/roles/assign',
+    payload,
+    withTenantAdminHeaders(tenantId),
+  );
   return normalizeUser(data);
 }
 
@@ -201,8 +241,15 @@ export async function assignRole(payload: AssignRolePayload) {
  * @param payload - The data for updating the permissions.
  * @returns A promise that resolves to the updated role.
  */
-export async function updateRolePermissions(payload: UpdateRolePermissionsPayload) {
-  const { data } = await api.post<AccessControlRole>('/access-control/roles/permissions', payload);
+export async function updateRolePermissions(
+  tenantId: string,
+  payload: UpdateRolePermissionsPayload,
+) {
+  const { data } = await api.post<AccessControlRole>(
+    '/access-control/roles/permissions',
+    payload,
+    withTenantAdminHeaders(tenantId),
+  );
   return data;
 }
 
@@ -211,11 +258,12 @@ export async function updateRolePermissions(payload: UpdateRolePermissionsPayloa
  * @param options - Options for filtering the list.
  * @returns A promise that resolves to an array of audit log entries.
  */
-export async function listAuditLogs(options: ListAuditLogOptions = {}) {
+export async function listAuditLogs(tenantId: string, options: ListAuditLogOptions = {}) {
   const { limit } = options;
-  const { data } = await api.get<AuditLogEntry[]>(
-    '/access-control/audit-logs',
-    limit ? { params: { limit } } : undefined,
-  );
+  const config = {
+    ...withTenantAdminHeaders(tenantId),
+    params: limit ? { limit } : undefined,
+  };
+  const { data } = await api.get<AuditLogEntry[]>('/access-control/audit-logs', config);
   return data;
 }

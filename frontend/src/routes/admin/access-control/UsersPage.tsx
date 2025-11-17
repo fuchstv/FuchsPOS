@@ -8,19 +8,21 @@ import {
   listUsers,
   updateUserStatus,
 } from '../../../api/accessControl';
+import { useTenantAccessScope } from './TenantAccessContext';
 
 /**
  * A page component for managing users in the access control system.
  *
  * This component provides functionality to:
  * - View a list of all users.
- * - Create new users with a name, email, password, and optional tenant ID.
+ * - Create new users with a name, email and password for the active tenant scope.
  * - Activate or deactivate existing users.
  * - Assign roles to users.
  *
  * @returns {JSX.Element} The rendered user management page.
  */
 export default function UsersPage() {
+  const { tenantId } = useTenantAccessScope();
   const [users, setUsers] = useState<AccessControlUser[]>([]);
   const [roles, setRoles] = useState<AccessControlRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,6 @@ export default function UsersPage() {
     name: '',
     email: '',
     password: '',
-    tenantId: '',
   });
 
   const sortedUsers = useMemo(
@@ -47,12 +48,12 @@ export default function UsersPage() {
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [tenantId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [loadedUsers, loadedRoles] = await Promise.all([listUsers(), listRoles()]);
+      const [loadedUsers, loadedRoles] = await Promise.all([listUsers(tenantId), listRoles(tenantId)]);
       setUsers(loadedUsers);
       setRoles(loadedRoles);
       setError(null);
@@ -73,15 +74,14 @@ export default function UsersPage() {
 
     try {
       setCreating(true);
-      const user = await createUser({
+      const user = await createUser(tenantId, {
         name: form.name,
         email: form.email,
         password: form.password,
-        tenantId: form.tenantId.trim() ? form.tenantId : undefined,
       });
       setUsers(previous => [user, ...previous]);
       setRoleAssignments(previous => ({ ...previous, [user.id]: '' }));
-      setForm({ name: '', email: '', password: '', tenantId: '' });
+      setForm({ name: '', email: '', password: '' });
       setError(null);
     } catch (cause) {
       console.error(cause);
@@ -94,7 +94,7 @@ export default function UsersPage() {
   const handleToggleStatus = async (user: AccessControlUser) => {
     try {
       setStatusUpdating(user.id);
-      const updated = await updateUserStatus({
+      const updated = await updateUserStatus(tenantId, {
         userId: user.id,
         isActive: !user.isActive,
       });
@@ -117,7 +117,7 @@ export default function UsersPage() {
 
     try {
       setAssigningFor(userId);
-      const updated = await assignRole({ userId, roleId: selected });
+      const updated = await assignRole(tenantId, { userId, roleId: selected });
       setUsers(previous => previous.map(item => (item.id === updated.id ? updated : item)));
       setRoleAssignments(previous => ({ ...previous, [userId]: '' }));
       setError(null);
@@ -186,17 +186,6 @@ export default function UsersPage() {
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-indigo-400 focus:outline-none"
               placeholder="Mindestens 10 Zeichen"
               required
-            />
-          </label>
-
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="text-slate-300">Tenant-ID (optional)</span>
-            <input
-              type="text"
-              value={form.tenantId}
-              onChange={event => setForm(previous => ({ ...previous, tenantId: event.target.value }))}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-indigo-400 focus:outline-none"
-              placeholder="tenant-123"
             />
           </label>
 

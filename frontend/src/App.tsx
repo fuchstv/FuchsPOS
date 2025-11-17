@@ -1,11 +1,6 @@
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import PosDashboard from './routes/pos/PosDashboard';
-import {
-  AccessControlLayout,
-  AuditLogPage,
-  RolesPage,
-  UsersPage,
-} from './routes/admin/access-control';
+import AccessControl from './routes/admin/AccessControl';
 import InventoryDashboard from './routes/inventory/InventoryDashboard';
 import { InventoryRealtimeProvider } from './routes/inventory/InventoryRealtimeProvider';
 import ReportingDashboard from './routes/reporting/ReportingDashboard';
@@ -96,11 +91,7 @@ function AppContainer() {
           <Route path="/ops/tenant-control" element={<TenantControlCenter />} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />
           <Route path="/admin/tenant-settings" element={<TenantSettings />} />
-          <Route path="/admin/access-control" element={<AccessControlLayout />}>
-            <Route index element={<UsersPage />} />
-            <Route path="roles" element={<RolesPage />} />
-            <Route path="audit-log" element={<AuditLogPage />} />
-          </Route>
+          <Route path="/admin/access-control/*" element={<AccessControl />} />
           <Route element={<CustomerOrderLayout />}>
             <Route path="/order" element={<ProductCatalogPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />

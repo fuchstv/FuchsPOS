@@ -5,6 +5,7 @@ import {
   listRoles,
   updateRolePermissions,
 } from '../../../api/accessControl';
+import { useTenantAccessScope } from './TenantAccessContext';
 
 /**
  * Parses a comma-separated string of permissions into an array of strings.
@@ -29,6 +30,7 @@ function parsePermissions(input: string) {
  * @returns {JSX.Element} The rendered roles management page.
  */
 export default function RolesPage() {
+  const { tenantId } = useTenantAccessScope();
   const [roles, setRoles] = useState<AccessControlRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,18 +41,17 @@ export default function RolesPage() {
   const [form, setForm] = useState({
     name: '',
     description: '',
-    tenantId: '',
     permissions: '',
   });
 
   useEffect(() => {
     void loadRoles();
-  }, []);
+  }, [tenantId]);
 
   const loadRoles = async () => {
     try {
       setLoading(true);
-      const loadedRoles = await listRoles();
+      const loadedRoles = await listRoles(tenantId);
       setRoles(loadedRoles);
       setPermissionInputs(
         Object.fromEntries(
@@ -75,10 +76,9 @@ export default function RolesPage() {
 
     try {
       setCreating(true);
-      const role = await createRole({
+      const role = await createRole(tenantId, {
         name: form.name,
         description: form.description.trim() ? form.description : undefined,
-        tenantId: form.tenantId.trim() ? form.tenantId : undefined,
         permissions: parsePermissions(form.permissions),
       });
       setRoles(previous => [...previous, role]);
@@ -86,7 +86,7 @@ export default function RolesPage() {
         ...previous,
         [role.id]: role.permissions.map(item => item.permission.key).join(', '),
       }));
-      setForm({ name: '', description: '', tenantId: '', permissions: '' });
+      setForm({ name: '', description: '', permissions: '' });
       setError(null);
     } catch (cause) {
       console.error(cause);
@@ -100,7 +100,7 @@ export default function RolesPage() {
     const permissions = parsePermissions(permissionInputs[role.id] ?? '');
     try {
       setUpdating(role.id);
-      const updated = await updateRolePermissions({ roleId: role.id, permissions });
+      const updated = await updateRolePermissions(tenantId, { roleId: role.id, permissions });
       setRoles(previous => previous.map(item => (item.id === updated.id ? updated : item)));
       setPermissionInputs(previous => ({
         ...previous,
@@ -151,17 +151,6 @@ export default function RolesPage() {
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-indigo-400 focus:outline-none"
               placeholder="Manager"
               required
-            />
-          </label>
-
-          <label className="flex flex-col gap-2 text-sm">
-            <span className="text-slate-300">Tenant-ID (optional)</span>
-            <input
-              type="text"
-              value={form.tenantId}
-              onChange={event => setForm(previous => ({ ...previous, tenantId: event.target.value }))}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus:border-indigo-400 focus:outline-none"
-              placeholder="tenant-123"
             />
           </label>
 
