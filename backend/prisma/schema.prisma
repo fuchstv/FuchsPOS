@@ -45,6 +45,35 @@ enum PreorderStatus {
   PICKED_UP
 }
 
+enum OrderStatus {
+  SUBMITTED
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum FulfillmentTaskType {
+  KITCHEN
+  WAREHOUSE
+}
+
+enum FulfillmentTaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum DriverAssignmentStatus {
+  PLANNED
+  EN_ROUTE
+  DELIVERED
+  FAILED
+}
+
 enum DeliveryDocumentType {
   DELIVERY_NOTE
   PICKUP_RECEIPT
@@ -119,6 +148,84 @@ model Preorder {
   cashEvents        CashEvent[]
 
   @@index([externalReference])
+  @@index([status])
+}
+
+model DeliverySlot {
+  id              Int             @id @default(autoincrement())
+  tenantId        String
+  startTime       DateTime
+  endTime         DateTime
+  maxOrders       Int             @default(10)
+  maxKitchenLoad  Int             @default(100)
+  maxStorageLoad  Int             @default(100)
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  orders          CustomerOrder[]
+
+  @@index([tenantId, startTime])
+  @@index([tenantId, endTime])
+}
+
+model CustomerOrder {
+  id               Int                 @id @default(autoincrement())
+  tenantId         String
+  slotId           Int
+  status           OrderStatus         @default(SUBMITTED)
+  customerName     String
+  contactEmail     String?
+  contactPhone     String?
+  deliveryAddress  String?
+  totalAmount      Decimal?            @db.Decimal(12, 2)
+  items            Json
+  notes            String?
+  kitchenLoad      Int                 @default(0)
+  storageLoad      Int                 @default(0)
+  inventorySnapshot Json?
+  inventorySyncedAt DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  slot             DeliverySlot        @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  tasks            FulfillmentTask[]
+  driverAssignment DriverAssignment?
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([slotId])
+}
+
+model FulfillmentTask {
+  id          Int                    @id @default(autoincrement())
+  orderId     Int
+  taskType    FulfillmentTaskType
+  status      FulfillmentTaskStatus  @default(OPEN)
+  description String?
+  assignee    String?
+  metadata    Json?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  order       CustomerOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([taskType])
+  @@index([status])
+}
+
+model DriverAssignment {
+  id          Int                    @id @default(autoincrement())
+  orderId     Int                    @unique
+  driverName  String?
+  vehicleId   String?
+  status      DriverAssignmentStatus @default(PLANNED)
+  eta         DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  metadata    Json?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  order       CustomerOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
   @@index([status])
 }
 

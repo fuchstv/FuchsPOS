@@ -16,6 +16,10 @@ import { ReportingModule } from './reporting/reporting.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { OrdersModule } from './orders/orders.module';
+import { DeliverySlotsModule } from './delivery-slots/delivery-slots.module';
+import { KitchenModule } from './kitchen/kitchen.module';
+import { DispatchModule } from './dispatch/dispatch.module';
 import { AppController } from './app.controller';
 
 /**
@@ -43,6 +47,10 @@ import { AppController } from './app.controller';
     AccountingModule,
     AccessControlModule,
     IntegrationsModule,
+    OrdersModule,
+    DeliverySlotsModule,
+    KitchenModule,
+    DispatchModule,
   ],
   controllers: [AppController],
 })

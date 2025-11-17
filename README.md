@@ -118,6 +118,24 @@ The backend API provides several endpoints for interacting with the POS system. 
 -   `GET /api/reporting/dashboard`: Retrieves data for the reporting dashboard.
 -   `POST /api/reporting/exports`: Requests a new report export.
 
+### Order & Delivery APIs
+
+The new fulfillment stack exposes dedicated endpoints that connect online customers, kitchen staff, warehouse operators and drivers. All customer-facing requests must include the `x-pos-api-key` header. The default value is `demo-customer-key` and can be overridden via the `CUSTOMER_API_KEY` environment variable. Additionally, requests are rate limited (defaults: 60 requests/minute, configurable via `CUSTOMER_RATE_LIMIT` and `CUSTOMER_RATE_WINDOW_MS`).
+
+| Endpoint | Description |
+| --- | --- |
+| `POST /api/orders` | Accepts a new customer order. Validates inventory availability, reserves the requested delivery slot and kicks off kitchen/warehouse tasks. Requires API key + rate limiting. |
+| `GET /api/orders?tenantId=...&status=...` | Lists orders for a tenant including slot, fulfillment tasks and driver assignment. |
+| `PATCH /api/orders/:id/status` | Confirms status transitions (e.g. `CONFIRMED → PREPARING → READY → OUT_FOR_DELIVERY → DELIVERED`). Automatically updates kitchen and dispatch workflows. |
+| `GET /api/delivery-slots?tenantId=...` | Returns all upcoming slots together with their remaining capacity. |
+| `POST /api/delivery-slots/:id/reservations` | Checks/reserves capacity for ad-hoc workflows (internal tooling can use the same service as the order controller). |
+| `GET /api/kitchen/tasks?tenantId=...` | Lists kitchen and warehouse pick tasks so the production dashboard stays in sync. |
+| `PATCH /api/kitchen/tasks/:id` | Updates a task status or assigns a staff member. |
+| `POST /api/dispatch/assignments` | Plans/updates driver assignments for a specific order (preferred driver routing). |
+| `PATCH /api/dispatch/assignments/:id/status` | Sets driver progress (`PLANNED`, `EN_ROUTE`, `DELIVERED`, `FAILED`). |
+
+Every state change is fanned out via WebSockets (`orders.created`, `orders.updated`, `kitchen.tasks.updated`, `dispatch.assignments.updated`, `delivery-slots.updated`) and via HTTP webhooks stored in the `ApiWebhook` table. Kitchen screens and the driver app can therefore subscribe either to `/ws/pos` or register a webhook without additional code.
+
 For a complete list of all available endpoints and their parameters, please refer to the backend source code and the NestJS controllers.
 
 ## Local Development without Docker
