@@ -15,6 +15,21 @@ type HealthStatus = {
   };
 };
 
+type TenantLookupOrder = {
+  id: number;
+  tenantId: string | null;
+  createdAt: string;
+  customerName?: string | null;
+  slot?: { id: number; startTime: string; endTime: string; location?: string | null } | null;
+};
+
+type TenantOption = {
+  id: string;
+  orderCount: number;
+  lastOrderAt: string | null;
+  locationHint?: string | null;
+};
+
 const currency = new Intl.NumberFormat('de-DE', {
   style: 'currency',
   currency: 'EUR',
@@ -65,6 +80,7 @@ export default function PosDashboard() {
     recordCashDeposit,
     recordCashWithdrawal,
     tenantId,
+    setTenantId,
   } = usePosStore();
 
   const [customerEmail, setCustomerEmail] = useState('');
@@ -84,6 +100,15 @@ export default function PosDashboard() {
   const [cashEventStatus, setCashEventStatus] = useState<'idle' | 'deposit' | 'withdrawal'>('idle');
   const [cashEventError, setCashEventError] = useState<string | null>(null);
   const [cashEventMessage, setCashEventMessage] = useState<string | null>(null);
+  const [isTenantDialogOpen, setIsTenantDialogOpen] = useState(false);
+  const [tenantDraft, setTenantDraft] = useState('');
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
+  const [tenantLookupStatus, setTenantLookupStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [tenantLookupError, setTenantLookupError] = useState<string | null>(null);
+  const [tenantSnackbar, setTenantSnackbar] = useState<
+    { message: string; tone: 'info' | 'success' | 'error' | 'warning' }
+  | null>(null);
+  const [tenantSnackbarReminderShown, setTenantSnackbarReminderShown] = useState(false);
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -179,6 +204,13 @@ export default function PosDashboard() {
     ORDERED: 'border-indigo-400/40 bg-indigo-500/10 text-indigo-100',
     READY: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100',
     PICKED_UP: 'border-slate-400/40 bg-slate-500/10 text-slate-100',
+  };
+
+  const tenantSnackbarTone: Record<string, string> = {
+    success: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100',
+    error: 'border-rose-400/40 bg-rose-500/10 text-rose-100',
+    warning: 'border-amber-400/40 bg-amber-500/10 text-amber-100',
+    info: 'border-slate-400/40 bg-slate-500/20 text-slate-100',
   };
 
   const describeEvent = (type: string) => {
@@ -479,6 +511,24 @@ export default function PosDashboard() {
     });
   };
 
+  const handleTenantSelection = () => {
+    const normalized = tenantDraft.trim();
+    if (!normalized) {
+      setTenantSnackbar({
+        message: 'Bitte wähle einen Mandanten aus oder gib eine Mandant-ID ein.',
+        tone: 'error',
+      });
+      return;
+    }
+
+    setTenantId(normalized);
+    setIsTenantDialogOpen(false);
+    setTenantSnackbar({
+      message: `Mandant ${normalized} aktiviert.`,
+      tone: 'success',
+    });
+  };
+
   useEffect(() => {
     const fetchHealth = async () => {
       try {
@@ -496,6 +546,81 @@ export default function PosDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    setTenantDraft(tenantId ?? '');
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!isTenantDialogOpen) {
+      return;
+    }
+
+    setTenantLookupStatus('loading');
+    setTenantLookupError(null);
+
+    void api
+      .get<TenantLookupOrder[]>('/orders')
+      .then(({ data }) => {
+        const optionsMap = new Map<string, TenantOption>();
+        for (const order of data ?? []) {
+          const id = order.tenantId?.trim();
+          if (!id) {
+            continue;
+          }
+          const lastOrderAt = order.createdAt ?? null;
+          const existing = optionsMap.get(id);
+          if (existing) {
+            existing.orderCount += 1;
+            if (lastOrderAt && (!existing.lastOrderAt || new Date(lastOrderAt) > new Date(existing.lastOrderAt))) {
+              existing.lastOrderAt = lastOrderAt;
+              existing.locationHint = order.slot?.location ?? order.customerName ?? existing.locationHint;
+            }
+          } else {
+            optionsMap.set(id, {
+              id,
+              orderCount: 1,
+              lastOrderAt,
+              locationHint: order.slot?.location ?? order.customerName ?? null,
+            });
+          }
+        }
+
+        setTenantOptions(
+          Array.from(optionsMap.values()).sort((first, second) =>
+            first.id.localeCompare(second.id, 'de-DE'),
+          ),
+        );
+        setTenantLookupStatus('idle');
+      })
+      .catch(error => {
+        console.warn('Mandanten konnten nicht geladen werden.', error);
+        setTenantLookupError('Mandanten konnten nicht geladen werden. Bitte erneut versuchen.');
+        setTenantOptions([]);
+        setTenantLookupStatus('error');
+      });
+  }, [isTenantDialogOpen]);
+
+  useEffect(() => {
+    if (!tenantConfigured && !tenantSnackbarReminderShown) {
+      setTenantSnackbar({
+        message: 'Kein Mandant ausgewählt. Einige Funktionen bleiben deaktiviert.',
+        tone: 'warning',
+      });
+      setTenantSnackbarReminderShown(true);
+    }
+    if (tenantConfigured && tenantSnackbarReminderShown) {
+      setTenantSnackbarReminderShown(false);
+    }
+  }, [tenantConfigured, tenantSnackbarReminderShown]);
+
+  useEffect(() => {
+    if (!tenantSnackbar) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setTenantSnackbar(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [tenantSnackbar]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <header className="sticky top-0 z-10 backdrop-blur bg-slate-950/70 border-b border-white/10">
@@ -504,7 +629,7 @@ export default function PosDashboard() {
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">FuchsPOS</p>
             <h1 className="text-2xl font-semibold">Point of Sale Cockpit</h1>
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
             <span className="rounded-full bg-emerald-500/20 px-3 py-1 font-medium text-emerald-300">
               {cart.length} Artikel
             </span>
@@ -516,9 +641,56 @@ export default function PosDashboard() {
                 Tisch {activeTable.label}
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => setIsTenantDialogOpen(true)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                tenantConfigured
+                  ? 'border-white/15 bg-white/5 text-slate-200 hover:border-brand/60 hover:text-brand'
+                  : 'border-amber-400/60 bg-amber-500/10 text-amber-200 hover:border-amber-300'
+              }`}
+            >
+              {tenantConfigured ? `Mandant: ${tenantId}` : 'Mandant wählen'}
+            </button>
           </div>
         </div>
       </header>
+
+      {!tenantConfigured && (
+        <div className="mx-auto mt-4 w-full max-w-6xl px-6">
+          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-base font-semibold text-amber-50">Mandant erforderlich</p>
+                <p className="text-xs text-amber-100/80 sm:text-sm">
+                  Wähle einen Mandanten, um Vorbestellungen, Kassenevents und Zahlungen zu synchronisieren.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-amber-300/60 bg-amber-500/20 px-4 py-2 text-xs font-semibold text-amber-50 transition hover:border-amber-200"
+                  onClick={() => setIsTenantDialogOpen(true)}
+                >
+                  Mandant auswählen
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 transition hover:border-white/30"
+                  onClick={() =>
+                    setTenantSnackbar({
+                      message: 'Ohne Mandant können keine Belege oder Kassenbewegungen verbucht werden.',
+                      tone: 'info',
+                    })
+                  }
+                >
+                  Warum erforderlich?
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 md:flex-row">
         <section className="flex-1 space-y-4">
@@ -1298,6 +1470,148 @@ export default function PosDashboard() {
           </section>
         </aside>
       </main>
+
+      {isTenantDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8">
+          <div
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setIsTenantDialogOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950/90 p-6 text-sm shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Mandanten</p>
+                <h2 className="text-xl font-semibold text-white">Mandant auswählen</h2>
+                <p className="text-xs text-slate-400">
+                  Wähle einen der zuletzt genutzten Mandanten oder gib eine ID manuell ein.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300 transition hover:border-white/40"
+                onClick={() => setIsTenantDialogOpen(false)}
+              >
+                Schließen
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {tenantLookupStatus === 'loading' && (
+                  <p className="text-xs text-slate-400">Mandanten werden geladen …</p>
+                )}
+                {tenantLookupStatus === 'error' && tenantLookupError && (
+                  <p className="text-xs text-rose-300">{tenantLookupError}</p>
+                )}
+                {tenantLookupStatus !== 'loading' && tenantOptions.length === 0 && !tenantLookupError && (
+                  <p className="text-xs text-slate-400">
+                    Noch keine Bestellungen gefunden. Du kannst eine Mandant-ID manuell angeben.
+                  </p>
+                )}
+                {tenantOptions.map(option => (
+                  <label
+                    key={option.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3 py-2 transition ${
+                      tenantDraft === option.id
+                        ? 'border-brand bg-brand/10 text-brand'
+                        : 'border-white/10 bg-white/5 text-slate-200 hover:border-brand/40'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="tenant-option"
+                      value={option.id}
+                      checked={tenantDraft === option.id}
+                      onChange={event => setTenantDraft(event.target.value)}
+                      className="mt-1"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-white">{option.id}</p>
+                      <p className="text-xs text-slate-400">{option.orderCount} Bestellung(en)</p>
+                      {option.lastOrderAt && (
+                        <p className="text-[11px] text-slate-500">
+                          Zuletzt genutzt am{' '}
+                          {new Date(option.lastOrderAt).toLocaleString('de-DE', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </p>
+                      )}
+                      {option.locationHint && (
+                        <p className="text-[11px] text-slate-500">Hinweis: {option.locationHint}</p>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="tenantId" className="text-xs font-semibold text-slate-300">
+                  Mandant-ID manuell eingeben
+                </label>
+                <input
+                  id="tenantId"
+                  type="text"
+                  value={tenantDraft}
+                  onChange={event => setTenantDraft(event.target.value)}
+                  placeholder="tenant-123"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-brand focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Die Auswahl wird lokal gespeichert (Schlüssel: fuchspos.posTenantId).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2 pt-2 text-xs font-semibold">
+                <button
+                  type="button"
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-slate-200 transition hover:border-white/30"
+                  onClick={() => setTenantDraft('')}
+                >
+                  Zurücksetzen
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-slate-200 transition hover:border-white/30"
+                  onClick={() => setIsTenantDialogOpen(false)}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border border-brand bg-brand/20 px-4 py-2 text-brand transition hover:bg-brand/30"
+                  onClick={handleTenantSelection}
+                >
+                  Mandant aktivieren
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tenantSnackbar && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-40 w-full max-w-md -translate-x-1/2 px-4">
+          <div
+            className={`pointer-events-auto flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 text-sm shadow-lg ${
+              tenantSnackbarTone[tenantSnackbar.tone] ?? tenantSnackbarTone.info
+            }`}
+          >
+            <p>{tenantSnackbar.message}</p>
+            <button
+              type="button"
+              className="text-xs font-semibold uppercase tracking-wide text-white/70"
+              onClick={() => setTenantSnackbar(null)}
+            >
+              Schließen
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
