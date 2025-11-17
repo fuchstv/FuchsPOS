@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import api from '../../api/client';
 import { fetchReceiptDocument } from '../../api/pos';
+import { listTenantProfiles } from '../../api/tenantConfig';
 import { usePosStore } from '../../store/posStore';
 import type { PaymentMethod, TableCheck } from '../../store/types';
 import { usePosRealtime } from '../../realtime/usePosRealtime';
@@ -15,19 +16,17 @@ type HealthStatus = {
   };
 };
 
-type TenantLookupOrder = {
-  id: number;
-  tenantId: string | null;
-  createdAt: string;
-  customerName?: string | null;
-  slot?: { id: number; startTime: string; endTime: string; location?: string | null } | null;
-};
-
 type TenantOption = {
   id: string;
-  orderCount: number;
-  lastOrderAt: string | null;
-  locationHint?: string | null;
+  name: string;
+  cashRegisterCount: number;
+  tssCount: number;
+  defaultRegister: {
+    id: string;
+    label: string;
+    location: string | null;
+    tssId: string | null;
+  } | null;
 };
 
 const currency = new Intl.NumberFormat('de-DE', {
@@ -523,8 +522,12 @@ export default function PosDashboard() {
 
     setTenantId(normalized);
     setIsTenantDialogOpen(false);
+    const selectedOption = tenantOptions.find(option => option.id === normalized);
+    const registerHint = selectedOption?.defaultRegister
+      ? `Standardkasse: ${selectedOption.defaultRegister.label} (${selectedOption.defaultRegister.id})${selectedOption.defaultRegister.location ? ` – ${selectedOption.defaultRegister.location}` : ''}`
+      : 'Keine Standardkasse hinterlegt.';
     setTenantSnackbar({
-      message: `Mandant ${normalized} aktiviert.`,
+      message: `Mandant ${selectedOption?.name ?? normalized} aktiviert. ${registerHint}`,
       tone: 'success',
     });
   };
@@ -558,38 +561,27 @@ export default function PosDashboard() {
     setTenantLookupStatus('loading');
     setTenantLookupError(null);
 
-    void api
-      .get<TenantLookupOrder[]>('/orders')
-      .then(({ data }) => {
-        const optionsMap = new Map<string, TenantOption>();
-        for (const order of data ?? []) {
-          const id = order.tenantId?.trim();
-          if (!id) {
-            continue;
-          }
-          const lastOrderAt = order.createdAt ?? null;
-          const existing = optionsMap.get(id);
-          if (existing) {
-            existing.orderCount += 1;
-            if (lastOrderAt && (!existing.lastOrderAt || new Date(lastOrderAt) > new Date(existing.lastOrderAt))) {
-              existing.lastOrderAt = lastOrderAt;
-              existing.locationHint = order.slot?.location ?? order.customerName ?? existing.locationHint;
-            }
-          } else {
-            optionsMap.set(id, {
-              id,
-              orderCount: 1,
-              lastOrderAt,
-              locationHint: order.slot?.location ?? order.customerName ?? null,
-            });
-          }
-        }
-
-        setTenantOptions(
-          Array.from(optionsMap.values()).sort((first, second) =>
-            first.id.localeCompare(second.id, 'de-DE'),
-          ),
-        );
+    void listTenantProfiles()
+      .then(profiles => {
+        const options = profiles.map(profile => {
+          const defaultRegister =
+            profile.cashRegisters.find(register => register.isDefault) ?? profile.cashRegisters[0] ?? null;
+          return {
+            id: profile.id,
+            name: profile.name,
+            cashRegisterCount: profile.cashRegisters.length,
+            tssCount: profile.tsses.length,
+            defaultRegister: defaultRegister
+              ? {
+                  id: defaultRegister.id,
+                  label: defaultRegister.label ?? defaultRegister.id,
+                  location: defaultRegister.location ?? null,
+                  tssId: defaultRegister.tssId ?? null,
+                }
+              : null,
+          } satisfies TenantOption;
+        });
+        setTenantOptions(options.sort((first, second) => first.name.localeCompare(second.name, 'de-DE')));
         setTenantLookupStatus('idle');
       })
       .catch(error => {
@@ -1482,14 +1474,14 @@ export default function PosDashboard() {
             aria-modal="true"
             className="relative z-10 w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950/90 p-6 text-sm shadow-2xl"
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Mandanten</p>
-                <h2 className="text-xl font-semibold text-white">Mandant auswählen</h2>
-                <p className="text-xs text-slate-400">
-                  Wähle einen der zuletzt genutzten Mandanten oder gib eine ID manuell ein.
-                </p>
-              </div>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Mandanten</p>
+                  <h2 className="text-xl font-semibold text-white">Mandant auswählen</h2>
+                  <p className="text-xs text-slate-400">
+                    Wähle einen der konfigurierten Mandanten oder gib eine ID manuell ein.
+                  </p>
+                </div>
               <button
                 type="button"
                 className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300 transition hover:border-white/40"
@@ -1509,7 +1501,7 @@ export default function PosDashboard() {
                 )}
                 {tenantLookupStatus !== 'loading' && tenantOptions.length === 0 && !tenantLookupError && (
                   <p className="text-xs text-slate-400">
-                    Noch keine Bestellungen gefunden. Du kannst eine Mandant-ID manuell angeben.
+                    Noch keine Mandantenprofile gefunden. Du kannst eine Mandant-ID manuell angeben.
                   </p>
                 )}
                 {tenantOptions.map(option => (
@@ -1530,19 +1522,20 @@ export default function PosDashboard() {
                       className="mt-1"
                     />
                     <div>
-                      <p className="text-sm font-semibold text-white">{option.id}</p>
-                      <p className="text-xs text-slate-400">{option.orderCount} Bestellung(en)</p>
-                      {option.lastOrderAt && (
-                        <p className="text-[11px] text-slate-500">
-                          Zuletzt genutzt am{' '}
-                          {new Date(option.lastOrderAt).toLocaleString('de-DE', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })}
+                      <p className="text-sm font-semibold text-white">{option.name}</p>
+                      <p className="text-xs text-slate-400">ID: {option.id}</p>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        <span>{option.cashRegisterCount} Kassen</span>
+                        <span>{option.tssCount} TSS</span>
+                      </div>
+                      {option.defaultRegister ? (
+                        <p className="text-[11px] text-emerald-300">
+                          Standardkasse: {option.defaultRegister.label}{' '}
+                          <span className="text-slate-400">({option.defaultRegister.id})</span>
+                          {option.defaultRegister.location ? ` – ${option.defaultRegister.location}` : ''}
                         </p>
-                      )}
-                      {option.locationHint && (
-                        <p className="text-[11px] text-slate-500">Hinweis: {option.locationHint}</p>
+                      ) : (
+                        <p className="text-[11px] text-amber-300">Keine Standardkasse definiert</p>
                       )}
                     </div>
                   </label>

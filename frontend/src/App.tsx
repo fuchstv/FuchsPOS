@@ -16,6 +16,7 @@ import ProductCatalogPage from './routes/order/ProductCatalogPage';
 import CheckoutPage from './routes/order/CheckoutPage';
 import OrderConfirmationPage from './routes/order/OrderConfirmationPage';
 import OrderTrackingPage from './routes/order/TrackingPage';
+import TenantSettings from './routes/admin/TenantSettings';
 
 const navLinks = [
   { to: '/', label: 'POS', end: true },
@@ -23,6 +24,7 @@ const navLinks = [
   { to: '/reporting', label: 'Reporting' },
   { to: '/diagnostics', label: 'Diagnose' },
   { to: '/admin/access-control', label: 'Access Control' },
+  { to: '/admin/tenant-settings', label: 'Mandanten' },
   { to: '/order', label: 'Kundenbestellung' },
 ];
 
@@ -90,6 +92,7 @@ function AppContainer() {
           <Route path="/inventory" element={<InventoryDashboard />} />
           <Route path="/reporting" element={<ReportingDashboard />} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />
+          <Route path="/admin/tenant-settings" element={<TenantSettings />} />
           <Route path="/admin/access-control" element={<AccessControlLayout />}>
             <Route index element={<UsersPage />} />
             <Route path="roles" element={<RolesPage />} />
