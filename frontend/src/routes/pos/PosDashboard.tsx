@@ -882,6 +882,12 @@ export default function PosDashboard() {
               </p>
               <p>Bonnummer: {latestSale.receiptNo}</p>
               <p>Gesamt: {currency.format(latestSale.total)}</p>
+              {typeof latestSale.amountTendered === 'number' && (
+                <p>Erhalten: {currency.format(latestSale.amountTendered)}</p>
+              )}
+              {typeof latestSale.changeDue === 'number' && (
+                <p>Rückgeld: {currency.format(latestSale.changeDue)}</p>
+              )}
               {latestSale.fiscalization && (
                 <div className="space-y-1 rounded-xl border border-emerald-400/30 bg-emerald-600/10 p-3 text-xs">
                   <p className="text-[10px] uppercase tracking-wider text-emerald-200/70">TSS-Daten</p>

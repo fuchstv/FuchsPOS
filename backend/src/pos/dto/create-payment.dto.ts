@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -103,6 +104,16 @@ export class CreatePaymentDto {
    */
   @IsEnum(PaymentMethod)
   paymentMethod!: PaymentMethod;
+
+  /**
+   * The amount of cash received from the customer when paying with cash.
+   * @example 20.0
+   */
+  @ValidateIf(dto => dto.paymentMethod === PaymentMethod.CASH)
+  @Type(() => Number)
+  @IsNumber()
+  @IsPositive()
+  amountTendered?: number;
 
   /**
    * An optional reference for the transaction (e.g., a pre-order ID).
