@@ -20,7 +20,6 @@ import {
   SaleResponse,
   CartTotals,
   PreorderRecord,
-  CourseEntry,
   TableTabRecord,
   CreateTableTabPayload,
   TableCheck,
@@ -100,31 +99,52 @@ const cashFormatter = new Intl.NumberFormat('de-DE', {
 
 const POS_TENANT_STORAGE_KEY = 'fuchspos.posTenantId';
 
-const resolveTenantIdFromContext = () => {
+let cachedTenantId: string | null = null;
+
+type ResolveTenantOptions = {
+  /** Forces a fresh lookup from storage/context even if cached. */
+  forceRefresh?: boolean;
+};
+
+const resolveTenantIdFromContext = (options?: ResolveTenantOptions) => {
+  if (!options?.forceRefresh && cachedTenantId !== null) {
+    return cachedTenantId;
+  }
+
   const envTenantId = (import.meta.env.VITE_POS_TENANT_ID ?? '').trim();
   if (typeof window === 'undefined') {
+    cachedTenantId = envTenantId || null;
     return envTenantId;
   }
 
   const storedTenantId = window.localStorage.getItem(POS_TENANT_STORAGE_KEY);
   if (storedTenantId && storedTenantId.trim()) {
-    return storedTenantId.trim();
+    cachedTenantId = storedTenantId.trim();
+    return cachedTenantId;
   }
 
   if (envTenantId) {
     window.localStorage.setItem(POS_TENANT_STORAGE_KEY, envTenantId);
+    cachedTenantId = envTenantId;
     return envTenantId;
   }
 
+  cachedTenantId = null;
   return '';
 };
 
 const persistTenantPreference = (tenantId: string) => {
-  if (typeof window === 'undefined') {
-    return;
+  const normalized = tenantId.trim();
+
+  if (typeof window !== 'undefined') {
+    if (normalized) {
+      window.localStorage.setItem(POS_TENANT_STORAGE_KEY, normalized);
+    } else {
+      window.localStorage.removeItem(POS_TENANT_STORAGE_KEY);
+    }
   }
 
-  window.localStorage.setItem(POS_TENANT_STORAGE_KEY, tenantId);
+  cachedTenantId = normalized || null;
 };
 
 type RemoteCartResponse = {
