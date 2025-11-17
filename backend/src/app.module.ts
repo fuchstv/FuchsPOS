@@ -21,6 +21,7 @@ import { DeliverySlotsModule } from './delivery-slots/delivery-slots.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { EngagementModule } from './engagement/engagement.module';
+import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { AppController } from './app.controller';
 
 /**
@@ -53,6 +54,7 @@ import { AppController } from './app.controller';
     DeliverySlotsModule,
     KitchenModule,
     DispatchModule,
+    TenantConfigModule,
   ],
   controllers: [AppController],
 })
