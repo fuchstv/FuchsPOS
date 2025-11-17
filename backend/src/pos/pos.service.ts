@@ -183,7 +183,9 @@ export class PosService {
    * @returns A confirmation message and the simulated sale payload.
    */
   async simulatePayment(dto: CreatePaymentDto) {
-    const sale = await this.createSaleEntity(dto);
+    const total = Number(this.calculateTotal(dto).toFixed(2));
+    const { amountTendered, changeDue } = this.resolveCashDetails(dto, total);
+    const sale = await this.createSaleEntity(dto, { total, amountTendered, changeDue });
     const payload = await this.buildSalePayload(sale);
     await this.redis.setJson('pos:latest-sale', payload, LATEST_SALE_TTL_SECONDS);
 
@@ -205,6 +207,7 @@ export class PosService {
     try {
       const total = Number(this.calculateTotal(dto).toFixed(2));
       const receiptNo = this.generateReceiptNumber();
+      const { amountTendered, changeDue } = this.resolveCashDetails(dto, total);
 
       const fiscalization = await this.fiscalization.registerReceipt(receiptNo, dto, total);
 
@@ -212,6 +215,8 @@ export class PosService {
         receiptNo,
         total,
         fiscalization,
+        amountTendered,
+        changeDue,
       });
 
       const basePayload = this.toBaseSalePayload(sale);
@@ -482,6 +487,8 @@ export class PosService {
       refundForId?: number | null;
       refundReason?: string | null;
       operatorId?: string | null;
+      amountTendered?: number | null;
+      changeDue?: number | null;
     },
   ): Promise<SaleModel> {
     const total = options?.total ?? Number(this.calculateTotal(dto).toFixed(2));
@@ -492,6 +499,13 @@ export class PosService {
         receiptNo,
         paymentMethod: dto.paymentMethod,
         total,
+        amountTendered:
+          typeof options?.amountTendered === 'number'
+            ? options.amountTendered
+            : typeof dto.amountTendered === 'number'
+            ? dto.amountTendered
+            : null,
+        changeDue: typeof options?.changeDue === 'number' ? options.changeDue : null,
         status: options?.status ?? 'SUCCESS',
         items: dto.items as unknown as Prisma.InputJsonValue,
         reference: dto.reference ?? null,
@@ -564,12 +578,20 @@ export class PosService {
           }
         : undefined;
     const courses = (sale.coursePlan as SalePayload['courses']) ?? undefined;
+    const resolveNumericField = (value: unknown): number | null => {
+      if (value === null || typeof value === 'undefined') {
+        return null;
+      }
+      return typeof value === 'number' ? value : Number(value);
+    };
 
     return {
       id: sale.id,
       receiptNo: sale.receiptNo,
       paymentMethod: sale.paymentMethod,
       total: typeof sale.total === 'number' ? sale.total : Number(sale.total),
+      amountTendered: resolveNumericField(sale.amountTendered),
+      changeDue: resolveNumericField(sale.changeDue),
       status: sale.status,
       createdAt: new Date(sale.createdAt),
       items,
@@ -594,6 +616,26 @@ export class PosService {
    */
   private calculateTotal(dto: CreatePaymentDto) {
     return dto.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  }
+
+  private resolveCashDetails(dto: CreatePaymentDto, total: number) {
+    if (dto.paymentMethod !== PaymentMethod.CASH) {
+      return { amountTendered: null, changeDue: null } as const;
+    }
+
+    if (typeof dto.amountTendered !== 'number' || Number.isNaN(dto.amountTendered)) {
+      throw new BadRequestException('amountTendered ist für Barzahlungen erforderlich.');
+    }
+
+    const amountTendered = Number(dto.amountTendered.toFixed(2));
+    if (amountTendered < total) {
+      throw new BadRequestException('Der erhaltene Barbetrag darf den Gesamtbetrag nicht unterschreiten.');
+    }
+
+    return {
+      amountTendered,
+      changeDue: Number((amountTendered - total).toFixed(2)),
+    } as const;
   }
 
   /**

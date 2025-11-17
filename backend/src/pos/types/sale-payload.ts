@@ -86,6 +86,10 @@ export type SalePayload = {
   paymentMethod: PaymentMethod | string;
   /** The total amount of the sale. */
   total: number;
+  /** The amount tendered by the customer when paying with cash. */
+  amountTendered?: number | null;
+  /** The change returned to the customer when paying with cash. */
+  changeDue?: number | null;
   /** The status of the sale (e.g., 'SUCCESS'). */
   status: string;
   /** The date and time when the sale was created. */

@@ -109,6 +109,22 @@ export function renderReceiptHtml(viewModel: ReceiptViewModel) {
               <td style="padding-top:8px;font-weight:600;">Gesamt</td>
               <td style="padding-top:8px;text-align:right;font-weight:600;">${formatCurrency(viewModel.gross)}</td>
             </tr>
+            ${
+              typeof viewModel.sale.amountTendered === 'number'
+                ? `<tr>
+              <td>Erhalten</td>
+              <td style="text-align:right;">${formatCurrency(viewModel.sale.amountTendered)}</td>
+            </tr>`
+                : ''
+            }
+            ${
+              typeof viewModel.sale.changeDue === 'number'
+                ? `<tr>
+              <td>Rückgeld</td>
+              <td style="text-align:right;">${formatCurrency(viewModel.sale.changeDue)}</td>
+            </tr>`
+                : ''
+            }
           </tbody>
         </table>
         ${
@@ -189,6 +205,12 @@ export function renderReceiptPdf(viewModel: ReceiptViewModel) {
   lines.push(`Zwischensumme: ${formatCurrency(viewModel.net)}`);
   lines.push(`MwSt (${(viewModel.taxRate * 100).toFixed(0)}%): ${formatCurrency(viewModel.tax)}`);
   lines.push(`Gesamt: ${formatCurrency(viewModel.gross)}`);
+  if (typeof viewModel.sale.amountTendered === 'number') {
+    lines.push(`Erhalten: ${formatCurrency(viewModel.sale.amountTendered)}`);
+  }
+  if (typeof viewModel.sale.changeDue === 'number') {
+    lines.push(`Rückgeld: ${formatCurrency(viewModel.sale.changeDue)}`);
+  }
   if (viewModel.sale.fiscalization) {
     lines.push('');
     lines.push('TSS-Daten:');

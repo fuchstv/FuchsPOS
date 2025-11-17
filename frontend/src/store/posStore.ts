@@ -93,6 +93,11 @@ const defaultPaymentMethods: PaymentMethodDefinition[] = [
   },
 ];
 
+const cashFormatter = new Intl.NumberFormat('de-DE', {
+  style: 'currency',
+  currency: 'EUR',
+});
+
 const POS_TENANT_STORAGE_KEY = 'fuchspos.posTenantId';
 
 const resolveTenantIdFromContext = () => {
@@ -621,7 +626,39 @@ export const usePosStore = create<PosStore>((set, get) => {
         return;
       }
 
+      let amountTendered: number | undefined;
+      if (paymentMethod === 'CASH') {
+        const totals = calculateCartTotals(state.cart, state.catalog);
+        const defaultValue = totals.gross.toFixed(2);
+        const promptMessage = `Erhaltene Barzahlung? Gesamt: ${cashFormatter.format(totals.gross)}`;
+        const input =
+          typeof window === 'undefined'
+            ? defaultValue
+            : window.prompt(promptMessage, defaultValue);
+        if (typeof window !== 'undefined' && input === null) {
+          set({ error: 'Barzahlung abgebrochen.' });
+          return;
+        }
+        const parsed = input === null ? null : Number(String(input).replace(',', '.'));
+        if (parsed === null || Number.isNaN(parsed) || parsed <= 0) {
+          set({ error: 'Bitte gib einen gültigen Barbetrag ein.' });
+          return;
+        }
+        amountTendered = Number(parsed.toFixed(2));
+        if (amountTendered < totals.gross) {
+          set({ error: 'Der erhaltene Betrag darf den Gesamtbetrag nicht unterschreiten.' });
+          return;
+        }
+        const changeDue = Number((amountTendered - totals.gross).toFixed(2));
+        if (typeof window !== 'undefined') {
+          window.alert(`Rückgeld: ${cashFormatter.format(changeDue)}`);
+        }
+      }
+
       const payload = buildPaymentPayload(state.cart, paymentMethod, customerEmail, reference);
+      if (typeof amountTendered === 'number') {
+        payload.amountTendered = amountTendered;
+      }
 
       set({ paymentState: 'processing', error: undefined });
 

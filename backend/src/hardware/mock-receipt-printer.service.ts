@@ -23,6 +23,13 @@ export class MockReceiptPrinterService implements ReceiptPrinterDriver {
       `Mock-Drucker: Bon ${receipt.receiptNo} über ${receipt.total.toFixed(2)} EUR wird ausgegeben`,
     );
 
+    if (typeof receipt.amountTendered === 'number') {
+      const change = typeof receipt.changeDue === 'number' ? receipt.changeDue : 0;
+      this.logger.log(
+        `Erhalten: ${receipt.amountTendered.toFixed(2)} EUR · Rückgeld: ${change.toFixed(2)} EUR`,
+      );
+    }
+
     if (receipt.fiscalization) {
       this.logger.debug(
         `TSS-Daten – Mandant: ${receipt.fiscalization.tenantId}, TSS: ${receipt.fiscalization.tssId}, Transaktion: ${receipt.fiscalization.transactionId}`,

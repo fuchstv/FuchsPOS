@@ -81,6 +81,8 @@ export type PaymentRequestPayload = {
   items: PaymentLineItem[];
   /** The selected payment method. */
   paymentMethod: PaymentMethod;
+  /** Optional amount of cash tendered when using the CASH payment method. */
+  amountTendered?: number;
   /** An optional reference for the payment (e.g., invoice number). */
   reference?: string;
   /** An optional customer email for sending a digital receipt. */
@@ -258,6 +260,8 @@ export type SaleRecord = {
   status: string;
   createdAt: string;
   items: PaymentLineItem[];
+  amountTendered?: number | null;
+  changeDue?: number | null;
   reference?: string | null;
   table?: {
     tabId?: number | null;
