@@ -159,3 +159,54 @@ If you prefer to run the services locally without Docker, you will need to have 
     npm install
     npm run dev
     ```
+
+## ☁️ Azure Deployment
+
+Use the infrastructure-as-code template and GitHub Actions workflow included in this repository whenever you target Azure. The [Azure deployment guide](docs/azure-deployment.md) documents the full topology, required secrets, and CI/CD flow.
+
+### Provision the managed resources
+
+```bash
+az deployment group create \
+  --resource-group <rg-name> \
+  --template-file infra/azure/main.bicep \
+  --parameters \
+    acrName=<acr> \
+    postgresServerName=<pg-server> \
+    redisName=<redis> \
+    keyVaultName=<kv> \
+    keyVaultAdminObjectId=$(az ad signed-in-user show --query id -o tsv) \
+    backendImage=<registry>/fuchspos-backend:initial \
+    frontendImage=<registry>/fuchspos-frontend:initial \
+    backendPublicUrl=https://<backend-host> \
+    frontendApiUrl=https://<backend-host>/api \
+    customerApiKey=<customer-api-key>
+```
+
+### Manage secrets and configuration
+
+```bash
+az keyvault secret set --vault-name <kv> --name DATABASE-URL --value "postgresql://..."
+az keyvault secret set --vault-name <kv> --name REDIS-URL --value "rediss://..."
+az keyvault secret set --vault-name <kv> --name BACKEND-URL --value https://<backend-host>
+az keyvault secret set --vault-name <kv> --name VITE-API-URL --value https://<backend-host>/api
+az keyvault secret set --vault-name <kv> --name CUSTOMER-API-KEY --value <customer-api-key>
+```
+
+### Trigger a rolling update
+
+Once new images are pushed to Azure Container Registry (either manually or through the provided GitHub Actions workflow), roll them out with:
+
+```bash
+az containerapp update \
+  --name fuchspos-backend \
+  --resource-group <rg-name> \
+  --image <acr>.azurecr.io/fuchspos-backend:<tag> \
+  --revision-suffix hotfix-$(date +%s)
+
+az containerapp update \
+  --name fuchspos-frontend \
+  --resource-group <rg-name> \
+  --image <acr>.azurecr.io/fuchspos-frontend:<tag> \
+  --revision-suffix web-$(date +%s)
+```

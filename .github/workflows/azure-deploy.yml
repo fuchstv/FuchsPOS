@@ -1,0 +1,92 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Optional image tag override"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+      RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      BACKEND_APP: ${{ secrets.AZURE_BACKEND_CONTAINERAPP }}
+      FRONTEND_APP: ${{ secrets.AZURE_FRONTEND_CONTAINERAPP }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Compute image tag
+        id: compute-tags
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG=${GITHUB_SHA::7}
+          fi
+          echo "image-tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Push frontend image
+        run: |
+          IMAGE_TAG="${{ steps.compute-tags.outputs.image-tag }}"
+          docker buildx build ./frontend \
+            --platform linux/amd64 \
+            --tag "$REGISTRY/fuchspos-frontend:$IMAGE_TAG" \
+            --tag "$REGISTRY/fuchspos-frontend:latest" \
+            --push
+
+      - name: Push backend image
+        run: |
+          IMAGE_TAG="${{ steps.compute-tags.outputs.image-tag }}"
+          docker buildx build ./backend \
+            --platform linux/amd64 \
+            --tag "$REGISTRY/fuchspos-backend:$IMAGE_TAG" \
+            --tag "$REGISTRY/fuchspos-backend:latest" \
+            --push
+
+      - name: Update backend Container App
+        run: |
+          IMAGE_TAG="${{ steps.compute-tags.outputs.image-tag }}"
+          az containerapp update \
+            --name "$BACKEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$REGISTRY/fuchspos-backend:$IMAGE_TAG" \
+            --set-env-vars \
+              PORT=3000 \
+              DATABASE_URL=secretref:DATABASE-URL \
+              REDIS_URL=secretref:REDIS-URL \
+              BACKEND_URL=secretref:BACKEND-URL \
+              CUSTOMER_API_KEY=secretref:CUSTOMER-API-KEY \
+            --revision-suffix "api-${GITHUB_RUN_NUMBER}"
+
+      - name: Update frontend Container App
+        run: |
+          IMAGE_TAG="${{ steps.compute-tags.outputs.image-tag }}"
+          az containerapp update \
+            --name "$FRONTEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$REGISTRY/fuchspos-frontend:$IMAGE_TAG" \
+            --set-env-vars VITE_API_URL=secretref:VITE-API-URL \
+            --revision-suffix "web-${GITHUB_RUN_NUMBER}"
