@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PosRealtimeGateway } from './realtime.gateway';
+import { WebhookService } from './webhook.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 /**
  * The module for real-time WebSocket communication.
@@ -8,7 +10,8 @@ import { PosRealtimeGateway } from './realtime.gateway';
  * to connected clients.
  */
 @Module({
-  providers: [PosRealtimeGateway],
-  exports: [PosRealtimeGateway],
+  imports: [PrismaModule],
+  providers: [PosRealtimeGateway, WebhookService],
+  exports: [PosRealtimeGateway, WebhookService],
 })
 export class RealtimeModule {}
