@@ -43,16 +43,45 @@ export type Address = {
   country: string;
 };
 
-export type FulfillmentSlot = {
-  id: string;
-  type: FulfillmentType;
-  startsAt: string;
-  endsAt: string;
-  capacity: number;
-  remainingCapacity: number;
-  location?: string;
-  instructions?: string;
+type DeliverySlotUsage = {
+  orders: number;
+  kitchenLoad: number;
+  storageLoad: number;
 };
+
+type DeliverySlotApiResponse = {
+  id: number;
+  tenantId: string;
+  startTime: string;
+  endTime: string;
+  maxOrders: number;
+  maxKitchenLoad: number;
+  maxStorageLoad: number;
+  notes?: string | null;
+  usage: DeliverySlotUsage;
+  remaining: DeliverySlotUsage;
+};
+
+export type FulfillmentSlot = DeliverySlotApiResponse & {
+  type: FulfillmentType;
+  notes?: string;
+};
+
+const customerTenantId =
+  import.meta.env.VITE_CUSTOMER_TENANT_ID ?? import.meta.env.VITE_TENANT_ID ?? 'demo';
+
+const toStartOfDay = (date?: string) => {
+  const base = date ? new Date(date) : new Date();
+  const start = new Date(base);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
+
+const mapSlot = (slot: DeliverySlotApiResponse, type: FulfillmentType): FulfillmentSlot => ({
+  ...slot,
+  type,
+  notes: slot.notes ?? undefined,
+});
 
 export type PaymentIntentResponse = {
   intentId: string;
@@ -153,8 +182,7 @@ export type OrderSubmissionPayload = {
   address: Address;
   fulfillment: {
     type: FulfillmentType;
-    slotId: string;
-    reservationToken?: string;
+    slotId: number;
     instructions?: string;
   };
   payment: PaymentSubmission;
@@ -165,18 +193,35 @@ export const orderApi = {
     const response = await api.get<OrderProduct[]>('/orders/products');
     return response.data;
   },
-  fetchSlots: async (params: { type: FulfillmentType; date?: string }) => {
-    const response = await api.get<FulfillmentSlot[]>('/orders/slots', { params });
-    return response.data;
-  },
-  reserveSlot: async (slotId: string) => {
-    const response = await api.post<{ reservationToken: string; slot: FulfillmentSlot }>(
-      '/orders/slots/reservations',
-      {
-        slotId,
+  fetchSlots: async ({ type, date }: { type: FulfillmentType; date?: string }) => {
+    const from = toStartOfDay(date);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    const response = await api.get<DeliverySlotApiResponse[]>('/delivery-slots', {
+      params: {
+        tenantId: customerTenantId,
+        from: from.toISOString(),
+        to: to.toISOString(),
       },
-    );
-    return response.data;
+    });
+    return response.data.map(slot => mapSlot(slot, type));
+  },
+  reserveSlot: async ({
+    slotId,
+    type,
+    kitchenLoad = 0,
+    storageLoad = 0,
+  }: {
+    slotId: number;
+    type: FulfillmentType;
+    kitchenLoad?: number;
+    storageLoad?: number;
+  }) => {
+    const response = await api.post<DeliverySlotApiResponse>(`/delivery-slots/${slotId}/reservations`, {
+      kitchenLoad,
+      storageLoad,
+    });
+    return mapSlot(response.data, type);
   },
   createPaymentIntent: async (payload: {
     amount: number;
