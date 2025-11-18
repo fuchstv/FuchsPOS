@@ -13,9 +13,18 @@ export class RateLimitGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request & { ip?: string }>();
     const ip = request.ip || request.headers['x-forwarded-for']?.toString() || request.socket?.remoteAddress || 'unknown';
     const now = Date.now();
+
+    this.cleanup(now);
+
     const entry = this.hits.get(ip);
 
-    if (!entry || entry.resetAt <= now) {
+    if (!entry) {
+      this.hits.set(ip, { count: 1, resetAt: now + this.windowMs });
+      return true;
+    }
+
+    if (entry.resetAt <= now) {
+      this.hits.delete(ip);
       this.hits.set(ip, { count: 1, resetAt: now + this.windowMs });
       return true;
     }
@@ -26,5 +35,13 @@ export class RateLimitGuard implements CanActivate {
 
     entry.count += 1;
     return true;
+  }
+
+  private cleanup(now: number): void {
+    for (const [ip, entry] of this.hits) {
+      if (entry.resetAt <= now) {
+        this.hits.delete(ip);
+      }
+    }
   }
 }
