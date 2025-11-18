@@ -28,9 +28,9 @@ param backendImage string
 param frontendImage string
 param backendTargetPort int = 3000
 param frontendTargetPort int = 5173
-param backendCpu double = 1
+param backendCpu string = '1'
 param backendMemory string = '2Gi'
-param frontendCpu double = 0.5
+param frontendCpu string = '0.5'
 param frontendMemory string = '1Gi'
 
 @secure()
@@ -49,6 +49,8 @@ var redisHost = '${redisName}.redis.cache.windows.net'
 var databaseUrl = 'postgresql://${postgresAdminUser}:${postgresAdminPassword}@${postgresFqdn}:5432/${postgresDbName}?schema=public&sslmode=require'
 var redisUrl = 'rediss://${redisHost}:6380'
 var acrCredentials = listCredentials(resourceId('Microsoft.ContainerRegistry/registries', acrName), '2019-05-01')
+var backendCpuValue = json(backendCpu)
+var frontendCpuValue = json(frontendCpu)
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
@@ -120,7 +122,8 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview'
 }
 
 resource postgresDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
-  name: '${postgresServerName}/${postgresDbName}'
+  name: postgresDbName
+  parent: postgres
   properties: {}
 }
 
@@ -145,45 +148,50 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   properties: {
     tenantId: tenant().tenantId
     enableRbacAuthorization: true
-    sku: {
-      name: 'standard'
-      family: 'A'
-    }
     accessPolicies: []
     publicNetworkAccess: 'Enabled'
+  }
+  sku: {
+    name: 'standard'
+    family: 'A'
   }
 }
 
 resource kvSecretDatabase 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVault.name}/${databaseSecretName}'
+  name: databaseSecretName
+  parent: keyVault
   properties: {
     value: databaseUrl
   }
 }
 
 resource kvSecretRedis 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVault.name}/${redisSecretName}'
+  name: redisSecretName
+  parent: keyVault
   properties: {
     value: redisUrl
   }
 }
 
 resource kvSecretBackendUrl 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVault.name}/${backendUrlSecretName}'
+  name: backendUrlSecretName
+  parent: keyVault
   properties: {
     value: backendPublicUrl
   }
 }
 
 resource kvSecretFrontendApi 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVault.name}/${frontendApiSecretName}'
+  name: frontendApiSecretName
+  parent: keyVault
   properties: {
     value: frontendApiUrl
   }
 }
 
 resource kvSecretCustomerApi 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVault.name}/${customerApiSecretName}'
+  name: customerApiSecretName
+  parent: keyVault
   properties: {
     value: customerApiKey
   }
@@ -249,7 +257,7 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'backend'
           image: backendImage
           resources: {
-            cpu: backendCpu
+            cpu: backendCpuValue
             memory: backendMemory
           }
           env: [
@@ -322,7 +330,7 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'frontend'
           image: frontendImage
           resources: {
-            cpu: frontendCpu
+            cpu: frontendCpuValue
             memory: frontendMemory
           }
           env: [
