@@ -7,15 +7,15 @@ interface SlotPickerProps {
 }
 
 const formatTimeRange = (slot: FulfillmentSlot) => {
-  const start = new Date(slot.startsAt).toLocaleTimeString('de-DE', {
+  const start = new Date(slot.startTime).toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const end = new Date(slot.endsAt).toLocaleTimeString('de-DE', {
+  const end = new Date(slot.endTime).toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const date = new Date(slot.startsAt).toLocaleDateString('de-DE', {
+  const date = new Date(slot.startTime).toLocaleDateString('de-DE', {
     weekday: 'short',
     day: '2-digit',
     month: '2-digit',
@@ -71,7 +71,7 @@ export default function SlotPicker({ type }: SlotPickerProps) {
           <p className="text-sm text-slate-500">Für den gewählten Tag sind keine Slots verfügbar.</p>
         )}
         {filteredSlots.map(slot => {
-          const remaining = Math.max(slot.remainingCapacity, 0);
+          const remaining = Math.max(slot.remaining.orders, 0);
           const isSelected = selectedSlot?.id === slot.id;
           const disabled = remaining === 0;
           return (
@@ -90,8 +90,8 @@ export default function SlotPicker({ type }: SlotPickerProps) {
               ].join(' ')}
             >
               <p className="text-sm font-semibold">{formatTimeRange(slot)}</p>
-              <p className="text-xs text-slate-500">Kapazität: {remaining} / {slot.capacity}</p>
-              {slot.instructions && <p className="mt-1 text-xs text-slate-500">{slot.instructions}</p>}
+              <p className="text-xs text-slate-500">Kapazität: {remaining} / {slot.maxOrders}</p>
+              {slot.notes && <p className="mt-1 text-xs text-slate-500">{slot.notes}</p>}
               {isSelected && <p className="mt-1 text-xs font-semibold text-indigo-600">Slot reserviert</p>}
             </button>
           );

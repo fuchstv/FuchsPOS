@@ -26,7 +26,6 @@ type OrderStore = {
   address: Address;
   fulfillmentType: FulfillmentType;
   selectedSlot?: FulfillmentSlot;
-  slotReservationToken?: string;
   slotOptions: FulfillmentSlot[];
   slotLoading: boolean;
   slotError?: string;
@@ -133,7 +132,7 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
   resetCart: () => set({ cart: [] }),
   setCustomer: payload => set(state => ({ customer: { ...state.customer, ...payload } })),
   setAddress: payload => set(state => ({ address: { ...state.address, ...payload } })),
-  setFulfillmentType: type => set({ fulfillmentType: type, selectedSlot: undefined, slotReservationToken: undefined }),
+  setFulfillmentType: type => set({ fulfillmentType: type, selectedSlot: undefined }),
   fetchSlots: async (type, date) => {
     set({ slotLoading: true, slotError: undefined });
     try {
@@ -147,12 +146,19 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
   reserveSlot: async slot => {
     set({ slotError: undefined });
     try {
-      if (slot.remainingCapacity <= 0) {
+      if (slot.remaining.orders <= 0) {
         set({ slotError: 'Dieser Slot ist bereits voll ausgelastet.' });
         return false;
       }
-      const { reservationToken, slot: refreshedSlot } = await orderApi.reserveSlot(slot.id);
-      set({ selectedSlot: refreshedSlot, slotReservationToken: reservationToken });
+      const cart = get().cart;
+      const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+      const refreshedSlot = await orderApi.reserveSlot({
+        slotId: slot.id,
+        type: slot.type,
+        kitchenLoad: totalItems,
+        storageLoad: totalItems,
+      });
+      set({ selectedSlot: refreshedSlot });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Slot konnte nicht reserviert werden.';
@@ -190,7 +196,7 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
     if (!state.customer.firstName || !state.customer.lastName || !state.customer.email) {
       throw new Error('Bitte ergänzen Sie Ihre Kundendaten.');
     }
-    if (!state.selectedSlot || !state.slotReservationToken) {
+    if (!state.selectedSlot) {
       throw new Error('Bitte reservieren Sie einen Liefer- oder Abholslot.');
     }
     if (state.paymentMethod === 'card' && !state.paymentIntent) {
@@ -221,7 +227,6 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
         fulfillment: {
           type: state.fulfillmentType,
           slotId: state.selectedSlot.id,
-          reservationToken: state.slotReservationToken,
         },
         payment:
           state.paymentMethod === 'card'
@@ -235,7 +240,6 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
         cart: [],
         paymentIntent: undefined,
         selectedSlot: undefined,
-        slotReservationToken: undefined,
         slotOptions: [],
         paymentStatus: 'idle',
       });
