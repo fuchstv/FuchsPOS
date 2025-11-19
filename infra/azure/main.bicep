@@ -9,7 +9,7 @@ param postgresServerName string
 param postgresDbName string = 'fuchspos'
 param postgresAdminUser string = 'fuchsposadmin'
 @secure()
-param postgresAdminPassword string
+param postgresAdminPassword string = 'Aa1!' + uniqueString(resourceGroup().id, 'postgres-admin')
 param postgresVersion string = '16'
 param postgresTier string = 'GeneralPurpose'
 param postgresCompute string = 'Standard_D2s_v3'
@@ -150,10 +150,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     accessPolicies: []
     publicNetworkAccess: 'Enabled'
-  }
-  sku: {
-    name: 'standard'
-    family: 'A'
+    sku: {
+      name: 'standard'
+      family: 'A'
+    }
   }
 }
 
