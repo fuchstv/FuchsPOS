@@ -235,18 +235,22 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
         {
           name: 'database-url'
+          identity: 'System'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${databaseSecretName}'
         }
         {
           name: 'redis-url'
+          identity: 'System'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${redisSecretName}'
         }
         {
           name: 'backend-url'
+          identity: 'System'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${backendUrlSecretName}'
         }
         {
           name: 'customer-api-key'
+          identity: 'System'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${customerApiSecretName}'
         }
       ]
@@ -320,6 +324,7 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
         {
           name: 'vite-api-url'
+          identity: 'System'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${frontendApiSecretName}'
         }
       ]
